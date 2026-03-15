@@ -10,7 +10,7 @@
 
 - Backend job: Python 3.11, installs `requirements.txt` and `requirements-dev.txt`, then runs `pytest`.
 - Frontend job: Node 22, runs `npm ci`, `npm run lint`, `npm run test`, and `npm run build`.
-- Docker smoke job: `docker compose up -d --build`, waits for the API and admin UI to answer, then tears the stack down.
+- Docker smoke job: copies `.env.example` to `.env`, runs `docker compose up -d --build`, waits for the API and admin UI to answer, then tears the stack down.
 
 ## Image workflow
 

@@ -37,6 +37,7 @@ Provide a Docker-first platform to define and serve configurable mock APIs with 
 - The admin catalog/settings flow now supports endpoint duplication, opening a prefilled disabled copy with adjusted name/slug/path so teams can branch an existing route without immediately shadowing the live one.
 - The admin endpoint workspace now keeps its shared shell mounted across browse/create/edit route changes, so switching records animates the right-hand content panel instead of fading the whole page.
 - The desktop admin catalog rail now uses a bounded scroll region plus client-side pagination, which keeps long endpoint lists from stretching the workspace or pushing the main editor out of position.
+- The CI Docker smoke test now seeds `.env` from `.env.example` before invoking Compose, so GitHub Actions no longer fails teardown/bootstrap in clean checkouts that do not include a local `.env`.
 - GitHub Actions now runs backend tests, frontend lint/test/build, and a Docker Compose smoke test on `main` pushes and pull requests, while a separate image workflow validates runtime images on PRs and publishes multi-arch `linux/amd64` + `linux/arm64` images to GHCR on `main` and `v*` tags.
 - The repo now includes a `deploy/docker-compose.ghcr.yml` example plus `deploy/.env.ghcr.example` so teams can run the stack from published GHCR images without cloning the full source tree.
 - The seeded device catalog now defaults `deviceId` to UUID-style IDs and constrains `model` to the curated device-model enum list in both the list/detail device schemas.

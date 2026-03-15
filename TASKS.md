@@ -61,6 +61,7 @@ This file tracks the work needed to bootstrap and evolve the project.
 - [x] Keep the endpoint workspace shell mounted while only the right-hand record pane transitions between records
 - [x] Make the endpoint catalog rail scroll independently with client-side pagination
 - [x] Update repository and deployment references after the GitHub rename to Mockingbird
+- [x] Fix CI Docker smoke test bootstrap when `.env` is absent in GitHub Actions
 - [x] Add a dedicated long-text value type for schema-studio string fields
 - [x] Simplify the admin sign-in page with friendlier copy and a single-column intro/form flow
 - [x] Stabilize GitHub Actions CI and add multi-arch image publishing for CI/CD

@@ -53,6 +53,9 @@
 - **Canonical repo slug**: Treat `sxmxc/mockingbird` as the source-of-truth GitHub repository and update local git remotes plus deploy/docs references accordingly.
 - **Published image names**: Because runtime image names follow `ghcr.io/<owner>/<repo>-<image>`, the documented GHCR targets now resolve to `ghcr.io/sxmxc/mockingbird-api` and `ghcr.io/sxmxc/mockingbird-admin-web`.
 
+## 2026-03-15: CI smoke-test env bootstrap
+- **Workflow bootstrap**: Have the Docker smoke test create `.env` from `.env.example` before running Compose so CI behaves like a clean developer checkout without depending on ignored local files.
+
 ## 2026-03-15: Mockingbird public surface and brand
 - **Product name**: Present the system publicly as Mockingbird, including a shared mascot SVG used as the primary logo/favicon in the admin shell and public API landing page.
 - **Public homepage**: Add a branded landing page at `/` and `/api` plus a live `/api/reference.json` feed so the public API has a human-friendly homepage that stays aligned with the DB-backed catalog.

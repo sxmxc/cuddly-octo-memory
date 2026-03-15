@@ -66,6 +66,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare Compose env file
+        run: cp .env.example .env
       - name: Start Docker Compose stack
         run: docker compose up -d --build
       - name: Wait for services
