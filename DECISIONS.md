@@ -102,4 +102,9 @@
 - **Release note source**: Treat detailed pull requests as the canonical changelog input so automated releases can summarize shipped work from merged PR metadata instead of relying on direct commits to the default branch.
 - **Merge discipline**: Keep `main` as the integration/release branch and prefer changes to land through reviewable PRs that describe user-facing impact, risk, and verification.
 
+## 2026-03-15: GitHub wiki documentation strategy
+- **Wiki role**: Use the GitHub wiki as a curated user/developer handbook for setup, admin usage, API behavior, deployment, and troubleshooting.
+- **Canonical source**: Keep `README.md` and `docs/` in the main repository as the canonical documentation source, and derive the wiki content from those repo docs instead of maintaining a competing source of truth.
+- **Content boundaries**: Exclude internal planning, agent workflow instructions, backlog management, and architecture decision logs from the wiki so the public handbook stays practical and audience-focused.
+
 *> Future decisions should append a dated entry with context and rationale.*

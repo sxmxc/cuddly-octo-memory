@@ -64,6 +64,11 @@ If you access the frontend through a remote host or internal DNS name, add it to
 
 See `docs/ci-cd.md` for the release workflow, image tag rules, and runtime environment notes.
 
+## 📚 Documentation
+
+- Canonical docs live in this repo: [`README.md`](README.md) and [`docs/`](docs/)
+- The practical user/developer handbook lives in the [GitHub Wiki](https://github.com/sxmxc/mockingbird/wiki)
+
 ## 🐳 Image-only Compose Example
 
 If you want to run Mockingbird without cloning the full repo, start from:

@@ -60,6 +60,7 @@ Provide a Docker-first platform to define and serve configurable mock APIs with 
 - The API runtime version now comes from `APP_VERSION`, which lets release images stamp OpenAPI metadata with the published version, and the admin runtime image serves its built SPA through Nginx with a configurable `API_UPSTREAM`.
 - The dependency audit pass now targets Python 3.12 and Node 24 across Docker, local version files, and GitHub Actions; the backend runs on FastAPI 0.135 + Pydantic 2 + SQLModel 0.0.37, the frontend runs on Vite 8, workflow badges live in the README, and both `pip-audit` and `npm audit` are currently clean.
 - The admin frontend now also uses ESLint 10 flat config with current Vue parser/plugin packages, and `npm ci` no longer emits the old `eslint` / `rimraf` / `glob` / `inflight` deprecation warnings during container startup.
+- The GitHub wiki now lives in the separate `mockingbird.wiki` repository as a curated user/developer handbook, while `README.md` and `docs/` remain the canonical source of truth.
 
 ## Known Risks
 - Live OpenAPI generation may become slow if not cached.
@@ -83,6 +84,7 @@ Provide a Docker-first platform to define and serve configurable mock APIs with 
 - Pytest filters a known third-party `python_multipart` pending deprecation warning so local verification output stays focused on project issues.
 - The frontend Vite dev server now supports env-driven `FRONTEND_ALLOWED_HOSTS` and `FRONTEND_DEV_PROXY_TARGET` for remote-host access and Docker-safe API proxying.
 - The frontend lint config now lives in `apps/admin-web/eslint.config.mjs`; the older `.eslintrc` file is gone.
+- The GitHub wiki is intentionally user/developer focused and should stay aligned with the repo docs rather than duplicating agent process logs or architecture decision records.
 - Public landing artwork should be added under `apps/api/static/landing/`; the backend prefers matching `hero-top` and `hero-bottom` assets and otherwise falls back to the first matching `hero` asset across `.svg`, `.png`, `.jpg`, `.jpeg`, `.webp`, or `.avif`.
 - The admin frontend now targets Node 24+ locally, and the repo root includes `.node-version` / `.python-version` files to keep local runtimes aligned with CI and Docker.
 - Response schemas may contain internal `x-mock` and `x-builder` keys for generation and tree ordering; public OpenAPI strips those keys before publishing.

@@ -70,3 +70,4 @@ This file tracks the work needed to bootstrap and evolve the project.
 - [x] Remove admin-web `npm ci` deprecation warnings by migrating the lint stack to flat config and overriding the test-only `glob` path
 - [x] Remove the admin workspace intro card, move desktop scrolling below the top bar, and tighten the admin left-rail behavior
 - [x] Redesign the endpoint catalog cards into a denser, more scannable layout and normalize schema-studio shell scrolling
+- [x] Create and populate the GitHub wiki as a curated user/developer handbook, while keeping repo docs canonical
