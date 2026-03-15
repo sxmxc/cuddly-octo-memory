@@ -32,15 +32,6 @@ If you access the frontend through a remote host or internal DNS name, add it to
 - **Vuetify AI support**: the frontend uses `@vuetify/v0` for theme/storage helpers and ships with a repo-level Vuetify MCP config.
 - **Docker-first**: one command to bring up the full stack without depending on host `node_modules` for the frontend container.
 
-## Public artwork
-
-Drop approved public-landing artwork into:
-
-- `apps/api/static/landing/hero-top.svg`
-- `apps/api/static/landing/hero-bottom.svg`
-
-Keep the preferred files the same size, ideally `1920x1080`. The public API also accepts `.png`, `.jpg`, `.jpeg`, `.webp`, or `.avif` variants for those filenames, and still falls back to a single tall `hero.*` asset if the split pair is not present.
-
 ## 📦 Architecture
 
 - **Backend**: FastAPI + SQLModel + Postgres
