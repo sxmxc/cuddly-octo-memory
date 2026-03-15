@@ -63,7 +63,7 @@ function prettyJson(value: unknown): string {
 }
 
 async function loadEndpoint(): Promise<void> {
-  if (!endpointId.value || !auth.credentials.value) {
+  if (!endpointId.value || !auth.session.value) {
     isLoading.value = false;
     loadError.value = "Missing endpoint id.";
     return;
@@ -73,13 +73,13 @@ async function loadEndpoint(): Promise<void> {
   loadError.value = null;
 
   try {
-    const loadedEndpoint = await getEndpoint(endpointId.value, auth.credentials.value);
+    const loadedEndpoint = await getEndpoint(endpointId.value, auth.session.value);
     endpoint.value = loadedEndpoint;
     pathParameters.value = buildDefaultPathParameters(loadedEndpoint.path);
     requestBody.value = "{}";
   } catch (error) {
     if (error instanceof AdminApiError && error.status === 401) {
-      auth.logout("Your admin session expired. Sign in again before previewing endpoints.");
+      void auth.logout("Your admin session expired. Sign in again before previewing endpoints.");
       void router.push({ name: "login" });
       return;
     }
@@ -91,7 +91,7 @@ async function loadEndpoint(): Promise<void> {
 }
 
 async function loadSamplePreview(): Promise<void> {
-  if (!endpoint.value || !auth.credentials.value) {
+  if (!endpoint.value || !auth.session.value) {
     return;
   }
 
@@ -99,7 +99,7 @@ async function loadSamplePreview(): Promise<void> {
     const response = await previewResponse(
       endpoint.value.response_schema ?? {},
       endpoint.value.seed_key ?? null,
-      auth.credentials.value,
+      auth.session.value,
     );
     samplePreview.value = prettyJson(response.preview);
   } catch {

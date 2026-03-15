@@ -71,3 +71,5 @@ This file tracks the work needed to bootstrap and evolve the project.
 - [x] Remove the admin workspace intro card, move desktop scrolling below the top bar, and tighten the admin left-rail behavior
 - [x] Redesign the endpoint catalog cards into a denser, more scannable layout and normalize schema-studio shell scrolling
 - [x] Create and populate the GitHub wiki as a curated user/developer handbook, while keeping repo docs canonical
+- [x] Harden admin auth with managed dashboard users, password rotation, bearer sessions, and reserved private route validation
+- [x] Fix admin-user deletion so historical admin sessions do not block account removal

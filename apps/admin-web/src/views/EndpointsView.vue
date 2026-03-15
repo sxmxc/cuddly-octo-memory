@@ -81,7 +81,7 @@ const duplicateBanner = computed(() => {
 });
 
 async function fetchEndpoints(): Promise<void> {
-  if (!auth.credentials.value) {
+  if (!auth.session.value) {
     endpoints.value = [];
     return;
   }
@@ -90,10 +90,10 @@ async function fetchEndpoints(): Promise<void> {
   catalogError.value = null;
 
   try {
-    endpoints.value = await listEndpoints(auth.credentials.value);
+    endpoints.value = await listEndpoints(auth.session.value);
   } catch (error) {
     if (error instanceof AdminApiError && error.status === 401) {
-      auth.logout("Your admin session expired. Sign in again to keep editing.");
+      void auth.logout("Your admin session expired. Sign in again to keep editing.");
       void router.push({ name: "login" });
       return;
     }
@@ -106,7 +106,7 @@ async function fetchEndpoints(): Promise<void> {
 }
 
 watch(
-  () => auth.credentials.value,
+  () => auth.session.value,
   () => {
     void fetchEndpoints();
   },
@@ -156,7 +156,7 @@ function duplicateEndpoint(endpointId: number): void {
 }
 
 async function handleSave(): Promise<void> {
-  if (!auth.credentials.value) {
+  if (!auth.session.value) {
     pageError.value = "Sign in again before saving endpoints.";
     return;
   }
@@ -175,7 +175,7 @@ async function handleSave(): Promise<void> {
 
   try {
     if (props.mode === "create") {
-      const createdEndpoint = await createEndpoint(payload, auth.credentials.value);
+      const createdEndpoint = await createEndpoint(payload, auth.session.value);
       endpoints.value = [createdEndpoint, ...endpoints.value];
       void router.push({ name: "endpoints-edit", params: { endpointId: createdEndpoint.id }, query: { saved: "1" } });
       return;
@@ -186,12 +186,12 @@ async function handleSave(): Promise<void> {
       return;
     }
 
-    const updatedEndpoint = await updateEndpoint(selectedEndpoint.value.id, payload, auth.credentials.value);
+    const updatedEndpoint = await updateEndpoint(selectedEndpoint.value.id, payload, auth.session.value);
     endpoints.value = endpoints.value.map((endpoint) => (endpoint.id === updatedEndpoint.id ? updatedEndpoint : endpoint));
     pageSuccess.value = `Saved ${updatedEndpoint.name}.`;
   } catch (error) {
     if (error instanceof AdminApiError && error.status === 401) {
-      auth.logout("Your admin session expired. Sign in again before saving more changes.");
+      void auth.logout("Your admin session expired. Sign in again before saving more changes.");
       void router.push({ name: "login" });
       return;
     }
@@ -203,7 +203,7 @@ async function handleSave(): Promise<void> {
 }
 
 async function handleDelete(): Promise<void> {
-  if (!selectedEndpoint.value || !auth.credentials.value) {
+  if (!selectedEndpoint.value || !auth.session.value) {
     return;
   }
 
@@ -217,12 +217,12 @@ async function handleDelete(): Promise<void> {
   pageSuccess.value = null;
 
   try {
-    await deleteEndpoint(selectedEndpoint.value.id, auth.credentials.value);
+    await deleteEndpoint(selectedEndpoint.value.id, auth.session.value);
     endpoints.value = endpoints.value.filter((endpoint) => endpoint.id !== selectedEndpoint.value?.id);
     void router.push({ name: "endpoints-browse" });
   } catch (error) {
     if (error instanceof AdminApiError && error.status === 401) {
-      auth.logout("Your admin session expired. Sign in again before deleting endpoints.");
+      void auth.logout("Your admin session expired. Sign in again before deleting endpoints.");
       void router.push({ name: "login" });
       return;
     }

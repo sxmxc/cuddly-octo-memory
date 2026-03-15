@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Dict, List, Optional
 
 from pydantic import ConfigDict
-from sqlalchemy import Column, JSON as SAJSON
+from sqlalchemy import Boolean, Column, JSON as SAJSON, String
 from sqlmodel import Field, SQLModel
 
 from app.time_utils import utc_now
@@ -39,5 +39,37 @@ class EndpointDefinition(SQLModel, table=True):
     seed_key: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class AdminUser(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(
+        sa_column=Column(String(128), nullable=False, unique=True, index=True),
+    )
+    password_hash: str = Field(sa_column=Column(String(512), nullable=False))
+    is_active: bool = Field(default=True, sa_column=Column(Boolean, nullable=False, server_default="1"))
+    is_superuser: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="0"))
+    must_change_password: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="0"))
+    last_login_at: Optional[datetime] = None
+    password_changed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class AdminSession(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="adminuser.id", index=True, nullable=False)
+    token_hash: str = Field(
+        sa_column=Column(String(128), nullable=False, unique=True, index=True),
+    )
+    remember_me: bool = Field(default=False, sa_column=Column(Boolean, nullable=False, server_default="0"))
+    expires_at: datetime
+    revoked_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=utc_now)
+    last_used_at: datetime = Field(default_factory=utc_now)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

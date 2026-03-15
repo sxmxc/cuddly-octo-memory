@@ -1,4 +1,16 @@
-import type { AdminCredentials, Endpoint, EndpointPayload, JsonObject, PreviewResponsePayload } from "../types/endpoints";
+import type {
+  AdminLoginPayload,
+  AdminSession,
+  AdminSessionSnapshot,
+  AdminUser,
+  AdminUserCreatePayload,
+  AdminUserUpdatePayload,
+  ChangePasswordPayload,
+  Endpoint,
+  EndpointPayload,
+  JsonObject,
+  PreviewResponsePayload,
+} from "../types/endpoints";
 
 const REMEMBERED_SESSION_KEY = "mockingbird.admin-remembered-session";
 const ACTIVE_SESSION_KEY = "mockingbird.admin-active-session";
@@ -19,8 +31,9 @@ export class AdminApiError extends Error {
   }
 }
 
-function buildAuthorizationHeader(credentials: AdminCredentials): string {
-  return `Basic ${window.btoa(`${credentials.username}:${credentials.password}`)}`;
+function buildAuthorizationHeader(session: AdminSession | string): string {
+  const token = typeof session === "string" ? session : session.token;
+  return `Bearer ${token}`;
 }
 
 function parseJsonIfPossible(value: string): unknown {
@@ -35,7 +48,7 @@ function parseJsonIfPossible(value: string): unknown {
   }
 }
 
-function readStoredCredentials(storage: Storage | undefined): AdminCredentials | null {
+function readStoredSession(storage: Storage | undefined): AdminSession | null {
   if (!storage) {
     return null;
   }
@@ -46,25 +59,15 @@ function readStoredCredentials(storage: Storage | undefined): AdminCredentials |
       return null;
     }
 
-    const parsed = JSON.parse(rawValue) as Partial<AdminCredentials>;
-    const credentials = {
-      username: parsed.username ?? "",
-      password: parsed.password ?? "",
-    };
-
-    return hasCredentials(credentials) ? credentials : null;
+    return JSON.parse(rawValue) as AdminSession;
   } catch {
     return null;
   }
 }
 
-async function request<T>(path: string, credentials: AdminCredentials, init: RequestOptions = {}): Promise<T> {
-  if (!hasCredentials(credentials)) {
-    throw new AdminApiError("Enter both username and password to talk to the admin API.", 400);
-  }
-
+async function request<T>(path: string, session: AdminSession | string, init: RequestOptions = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  headers.set("Authorization", buildAuthorizationHeader(credentials));
+  headers.set("Authorization", buildAuthorizationHeader(session));
 
   if (init.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -89,24 +92,50 @@ async function request<T>(path: string, credentials: AdminCredentials, init: Req
   return parsedBody as T;
 }
 
-export function hasCredentials(credentials: AdminCredentials | null): credentials is AdminCredentials {
-  return Boolean(credentials?.username.trim() && credentials.password);
+async function publicRequest<T>(path: string, init: RequestOptions = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const response = await fetch(path, {
+    ...init,
+    headers,
+  });
+  const rawBody = await response.text();
+  const parsedBody = parseJsonIfPossible(rawBody);
+
+  if (!response.ok) {
+    const detail =
+      typeof parsedBody === "object" && parsedBody && "detail" in parsedBody
+        ? String(parsedBody.detail)
+        : rawBody || `${response.status} ${response.statusText}`;
+
+    throw new AdminApiError(detail, response.status);
+  }
+
+  return parsedBody as T;
 }
 
-export function loadStoredCredentials(): AdminCredentials | null {
+export function hasSession(session: AdminSession | null): session is AdminSession {
+  return Boolean(session?.token && session.user?.username);
+}
+
+export function loadStoredSession(): AdminSession | null {
   if (typeof window === "undefined") {
     return null;
   }
 
-  return readStoredCredentials(window.sessionStorage) ?? readStoredCredentials(window.localStorage);
+  return readStoredSession(window.sessionStorage) ?? readStoredSession(window.localStorage);
 }
 
-export function persistCredentials(credentials: AdminCredentials, rememberMe: boolean): void {
+export function persistSession(session: AdminSession, rememberMe: boolean): void {
   if (typeof window === "undefined") {
     return;
   }
 
-  const serialized = JSON.stringify(credentials);
+  const serialized = JSON.stringify(session);
   window.sessionStorage.setItem(ACTIVE_SESSION_KEY, serialized);
 
   if (rememberMe) {
@@ -116,7 +145,23 @@ export function persistCredentials(credentials: AdminCredentials, rememberMe: bo
   }
 }
 
-export function clearStoredCredentials(): void {
+export function updateStoredSession(session: AdminSession): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const serialized = JSON.stringify(session);
+
+  if (window.sessionStorage.getItem(ACTIVE_SESSION_KEY)) {
+    window.sessionStorage.setItem(ACTIVE_SESSION_KEY, serialized);
+  }
+
+  if (window.localStorage.getItem(REMEMBERED_SESSION_KEY)) {
+    window.localStorage.setItem(REMEMBERED_SESSION_KEY, serialized);
+  }
+}
+
+export function clearStoredSession(): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -125,34 +170,85 @@ export function clearStoredCredentials(): void {
   window.localStorage.removeItem(REMEMBERED_SESSION_KEY);
 }
 
-export function listEndpoints(credentials: AdminCredentials): Promise<Endpoint[]> {
-  return request<Endpoint[]>("/api/admin/endpoints", credentials);
-}
-
-export function getEndpoint(endpointId: number, credentials: AdminCredentials): Promise<Endpoint> {
-  return request<Endpoint>(`/api/admin/endpoints/${endpointId}`, credentials);
-}
-
-export function createEndpoint(payload: EndpointPayload, credentials: AdminCredentials): Promise<Endpoint> {
-  return request<Endpoint>("/api/admin/endpoints", credentials, {
+export function loginAdmin(payload: AdminLoginPayload): Promise<AdminSession> {
+  return publicRequest<AdminSession>("/api/admin/auth/login", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
-export function updateEndpoint(
-  endpointId: number,
-  payload: EndpointPayload,
-  credentials: AdminCredentials,
-): Promise<Endpoint> {
-  return request<Endpoint>(`/api/admin/endpoints/${endpointId}`, credentials, {
+export function getCurrentSession(session: AdminSession | string): Promise<AdminSessionSnapshot> {
+  return request<AdminSessionSnapshot>("/api/admin/auth/me", session);
+}
+
+export function logoutAdmin(session: AdminSession | string): Promise<null> {
+  return request<null>("/api/admin/auth/logout", session, {
+    method: "POST",
+  });
+}
+
+export function changePassword(
+  payload: ChangePasswordPayload,
+  session: AdminSession | string,
+): Promise<AdminSessionSnapshot> {
+  return request<AdminSessionSnapshot>("/api/admin/account/change-password", session, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listAdminUsers(session: AdminSession): Promise<AdminUser[]> {
+  return request<AdminUser[]>("/api/admin/users", session);
+}
+
+export function createAdminUser(payload: AdminUserCreatePayload, session: AdminSession): Promise<AdminUser> {
+  return request<AdminUser>("/api/admin/users", session, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateAdminUser(
+  userId: number,
+  payload: AdminUserUpdatePayload,
+  session: AdminSession,
+): Promise<AdminUser> {
+  return request<AdminUser>(`/api/admin/users/${userId}`, session, {
     method: "PUT",
     body: JSON.stringify(payload),
   });
 }
 
-export function deleteEndpoint(endpointId: number, credentials: AdminCredentials): Promise<null> {
-  return request<null>(`/api/admin/endpoints/${endpointId}`, credentials, {
+export function deleteAdminUser(userId: number, session: AdminSession): Promise<null> {
+  return request<null>(`/api/admin/users/${userId}`, session, {
+    method: "DELETE",
+  });
+}
+
+export function listEndpoints(session: AdminSession): Promise<Endpoint[]> {
+  return request<Endpoint[]>("/api/admin/endpoints", session);
+}
+
+export function getEndpoint(endpointId: number, session: AdminSession): Promise<Endpoint> {
+  return request<Endpoint>(`/api/admin/endpoints/${endpointId}`, session);
+}
+
+export function createEndpoint(payload: EndpointPayload, session: AdminSession): Promise<Endpoint> {
+  return request<Endpoint>("/api/admin/endpoints", session, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateEndpoint(endpointId: number, payload: EndpointPayload, session: AdminSession): Promise<Endpoint> {
+  return request<Endpoint>(`/api/admin/endpoints/${endpointId}`, session, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteEndpoint(endpointId: number, session: AdminSession): Promise<null> {
+  return request<null>(`/api/admin/endpoints/${endpointId}`, session, {
     method: "DELETE",
   });
 }
@@ -160,9 +256,9 @@ export function deleteEndpoint(endpointId: number, credentials: AdminCredentials
 export function previewResponse(
   responseSchema: JsonObject,
   seedKey: string | null,
-  credentials: AdminCredentials,
+  session: AdminSession,
 ): Promise<PreviewResponsePayload> {
-  return request<PreviewResponsePayload>("/api/admin/endpoints/preview-response", credentials, {
+  return request<PreviewResponsePayload>("/api/admin/endpoints/preview-response", session, {
     method: "POST",
     body: JSON.stringify({
       response_schema: responseSchema,

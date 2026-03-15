@@ -16,13 +16,15 @@ Provide a Docker-first platform to define and serve configurable mock APIs with 
 - Keep implementation pragmatic and “good enough” for v1.
 
 ## Active Assumptions
-- Admin auth uses Basic Auth for v1.
+- Admin auth now uses DB-backed dashboard users plus bearer session tokens, with a one-time bootstrap account created on first init.
 - OpenAPI can be rebuilt on every request; caching is secondary.
 - `response_schema` is now the single source of truth for response shape and mock behavior via `x-mock` extensions.
 
 ## Current Status Snapshot
 - Docker Compose starts a working Postgres, FastAPI API, and Vite admin app with `make up`.
-- The backend exposes basic-auth admin CRUD routes, DB-driven runtime dispatch, live OpenAPI generation, and an authenticated response preview endpoint.
+- The backend exposes session-authenticated admin routes, DB-backed dashboard-user management, forced password rotation for bootstrap/reset credentials, DB-driven runtime dispatch, live OpenAPI generation, and an authenticated response preview endpoint.
+- The admin account deletion path now removes all historical `adminsession` rows before deleting the user, so revoked or expired logins cannot strand dashboard accounts behind Postgres foreign-key errors.
+- The backend now reserves `/api/admin` plus other system-owned public paths like `/api` and `/api/reference.json`, so DB-defined mock endpoints cannot trespass into private or framework-owned route space.
 - The backend now manages SQLModel sessions through a yielded request-scoped dependency plus a shared context manager, which prevents leaked connections from exhausting the Postgres pool under sustained traffic.
 - The backend now also exposes a branded Mockingbird landing page at `/` and `/api`, plus a live `/api/reference.json` feed backed directly by the current endpoint catalog.
 - The public landing page now treats the opening viewport as a real full-screen hero, prefers explicit `hero-top.*` and `hero-bottom.*` artwork files from `apps/api/static/landing/`, pins immediately beneath a fixed topbar, and places the headline/copy in a wide translucent overlay band near the top of the art.
@@ -34,6 +36,7 @@ Provide a Docker-first platform to define and serve configurable mock APIs with 
 - The public sample-payload modal now lets long JSON strings wrap inside the modal body instead of creating a second inner scrollbar inside the payload `<pre>`.
 - Seed data loads a 15-endpoint catalog, and `make seed` / `make test` work in Docker.
 - The frontend now runs on Vue + Vuetify, with a dedicated login flow, protected catalog/settings routes, a dedicated schema studio route, light/dark theme toggle, catalog search/filtering, and a Vuetify-first drag-and-drop builder surface.
+- The admin frontend now stores bearer session tokens instead of raw passwords, redirects bootstrap/reset accounts into a mandatory password-rotation screen, and exposes a superuser-only dashboard-user management surface.
 - The admin catalog/settings flow now supports endpoint duplication, opening a prefilled disabled copy with adjusted name/slug/path so teams can branch an existing route without immediately shadowing the live one.
 - The admin endpoint workspace now keeps its shared shell mounted across browse/create/edit route changes, so switching records animates the right-hand content panel instead of fading the whole page.
 - The desktop admin catalog rail now uses a bounded scroll region plus client-side pagination, which keeps long endpoint lists from stretching the workspace or pushing the main editor out of position.
@@ -68,7 +71,7 @@ Provide a Docker-first platform to define and serve configurable mock APIs with 
 - The public landing page currently uses lightweight polling for the live quick reference rather than websockets or SSE.
 - The public landing page hero still depends on approved artwork being dropped into `apps/api/static/landing/hero.*`.
 - Admin UI and backend need to stay in sync on model schemas.
-- Remember-me mode still persists Basic Auth credentials client-side because the backend only exposes Basic Auth for v1; revisit once token/session auth exists.
+- Fresh installs still need an operator to capture the bootstrap password from `ADMIN_BOOTSTRAP_PASSWORD` or the API startup logs and rotate it promptly.
 - Request schema authoring still targets JSON request bodies only; query/path parameter modeling is a follow-up.
 - Vitest/jsdom still prints repeated `Could not parse CSS stylesheet` warnings when rendering Vuetify-heavy components, even though the frontend tests pass.
 - Local arm64 validation works through a temporary buildx/QEMU builder, but it is meaningfully slower than native amd64 builds because the admin runtime image has to cross-compile the full Vite bundle.
@@ -89,7 +92,8 @@ Provide a Docker-first platform to define and serve configurable mock APIs with 
 - The admin frontend now targets Node 24+ locally, and the repo root includes `.node-version` / `.python-version` files to keep local runtimes aligned with CI and Docker.
 - Response schemas may contain internal `x-mock` and `x-builder` keys for generation and tree ordering; public OpenAPI strips those keys before publishing.
 - Alembic lives under `apps/api/migrations/`, and both `start.sh` and `scripts/seed.sh` run the migration bootstrap before serving or seeding.
-- Active admin sessions now live in `sessionStorage`, while the explicit remember-me path additionally copies credentials to `localStorage` so page refreshes stay smooth without always making credentials durable.
+- Active admin sessions now live in `sessionStorage`, while the explicit remember-me path additionally copies a bearer session token to `localStorage` so page refreshes stay smooth without persisting the raw password in the browser.
+- Admin bootstrap now uses `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD`; leaving the password blank generates a one-time value in the API startup logs and forces a password change on first sign-in.
 - Vuetify MCP is configured at the repo root via `.mcp.json`, and the frontend package exposes `npm run mcp:vuetify` plus `npm run mcp:vuetify:http` for local MCP usage.
 - Official container images now follow a tag-driven release scheme: `vX.Y.Z` tags publish semver image tags plus `latest`, while default-branch builds publish branch/`edge`/`sha-*` tags alongside uploaded image metadata artifacts and provenance attestations.
 - The standalone deployment example targets `ghcr.io/sxmxc/mockingbird-api` and `ghcr.io/sxmxc/mockingbird-admin-web`, defaults to `IMAGE_TAG=edge`, and should be pinned to a numbered release tag for production use.

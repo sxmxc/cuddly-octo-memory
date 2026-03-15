@@ -37,8 +37,12 @@ function goToCatalog(): void {
   void router.push({ name: "endpoints-browse" });
 }
 
-function signOut(): void {
-  auth.logout("You signed out of the admin studio.");
+function goToSecurity(): void {
+  void router.push({ name: "security" });
+}
+
+async function signOut(): Promise<void> {
+  await auth.logout("You signed out of the admin studio.");
   void router.push({ name: "login" });
 }
 </script>
@@ -77,8 +81,25 @@ function signOut(): void {
             >
               Catalog
             </v-btn>
+            <v-btn
+              :active="route.name === 'security'"
+              prepend-icon="mdi-shield-account-outline"
+              variant="text"
+              @click="goToSecurity"
+            >
+              Security
+            </v-btn>
             <v-chip color="secondary" label prepend-icon="mdi-account-circle-outline" variant="tonal">
               {{ auth.username.value }}
+            </v-chip>
+            <v-chip
+              v-if="auth.mustChangePassword.value"
+              color="warning"
+              label
+              prepend-icon="mdi-lock-reset"
+              variant="tonal"
+            >
+              Password reset required
             </v-chip>
           </template>
 
@@ -92,7 +113,7 @@ function signOut(): void {
             v-if="auth.isAuthenticated.value && !isPublicRoute"
             prepend-icon="mdi-logout"
             variant="text"
-            @click="signOut"
+            @click="void signOut()"
           >
             Sign out
           </v-btn>

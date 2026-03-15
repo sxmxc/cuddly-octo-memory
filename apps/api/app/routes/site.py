@@ -41,7 +41,7 @@ LANDING_TEMPLATE = """
     <title>Mockingbird | Public Mock API</title>
     <meta
       name="description"
-      content="Mockingbird is a public mock API with a live endpoint catalog, realtime OpenAPI, and a private admin studio."
+      content="Mockingbird is a public mock API with a live endpoint catalog and realtime OpenAPI."
     />
     <link rel="icon" type="image/svg+xml" href="/static/mockingbird-icon.svg" />
     <link

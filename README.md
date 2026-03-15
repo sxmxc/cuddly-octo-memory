@@ -21,6 +21,8 @@ make up
 - OpenAPI JSON: http://localhost:8000/openapi.json
 - FastAPI docs: http://localhost:8000/docs
 
+If `ADMIN_BOOTSTRAP_PASSWORD` is left blank, the API prints a one-time bootstrap password in its startup logs the first time it creates the initial admin account. That account must rotate its password before the rest of the admin API unlocks.
+
 If you access the frontend through a remote host or internal DNS name, add it to `FRONTEND_ALLOWED_HOSTS` in `.env`. When the frontend runs in Docker, keep `FRONTEND_DEV_PROXY_TARGET=http://api:8000`.
 
 ## 🧠 What You Get
@@ -28,7 +30,7 @@ If you access the frontend through a remote host or internal DNS name, add it to
 - **Dynamic mock API**: endpoints defined in Postgres are served dynamically.
 - **Public landing page**: `/` and `/api` now render a full-height Mockingbird hero sourced from split top/bottom artwork frames, with a Bulma-based quick-reference table, filtering, pagination, request/response example modals for body-based routes, and a light/dark theme toggle.
 - **Live OpenAPI**: `/openapi.json` reflects the active endpoint catalog.
-- **Admin API**: basic-auth CRUD routes manage endpoint definitions in Postgres.
+- **Admin API**: bearer-session admin routes manage endpoint definitions plus dashboard accounts in Postgres.
 - **Seed catalog**: `make seed` loads 15 sample endpoints for local exploration, including device examples that now use UUID-style `deviceId` values and a curated default model enum.
 - **Admin UI**: Vue + Vuetify endpoint studio now includes a dedicated sign-in flow, protected catalog/settings routes, a separate schema editor page, light/dark theme toggle, skeleton loading states, search/filtering, drag-and-drop schema editing, and live previews of generated/public mock responses.
 - **Schema-driven generation**: response schemas can mix static values, true random generation, and mocking-style random generation per field via internal `x-mock` extensions, with semantic value types like `id`, `name`, `email`, `price`, and `long_text`.
