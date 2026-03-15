@@ -3,7 +3,8 @@ import EndpointsView from "../views/EndpointsView.vue";
 import EndpointPreviewView from "../views/EndpointPreviewView.vue";
 import LoginView from "../views/LoginView.vue";
 import SchemaEditorView from "../views/SchemaEditorView.vue";
-import { ensureAuthBooted, isAuthenticated } from "../composables/useAuth";
+import SecurityView from "../views/SecurityView.vue";
+import { ensureAuthBooted, isAuthenticated, mustChangePassword } from "../composables/useAuth";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -18,6 +19,15 @@ export const router = createRouter({
       component: LoginView,
       meta: {
         title: "Sign in",
+      },
+    },
+    {
+      path: "/security",
+      name: "security",
+      component: SecurityView,
+      meta: {
+        requiresAuth: true,
+        title: "Security",
       },
     },
     {
@@ -92,9 +102,15 @@ router.beforeEach(async (to) => {
     };
   }
 
+  if (isAuthenticated.value && mustChangePassword.value && to.name !== "security") {
+    return {
+      name: "security",
+    };
+  }
+
   if (to.name === "login" && isAuthenticated.value) {
     return {
-      name: "endpoints-browse",
+      name: mustChangePassword.value ? "security" : "endpoints-browse",
     };
   }
 

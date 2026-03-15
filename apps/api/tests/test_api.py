@@ -2,7 +2,6 @@ import json
 import os
 import sys
 import tempfile
-from base64 import b64encode
 from pathlib import Path
 from uuid import UUID
 
@@ -16,6 +15,10 @@ TEST_DB_PATH = Path(tempfile.gettempdir()) / "mockingbird-test.db"
 if TEST_DB_PATH.exists():
     TEST_DB_PATH.unlink()
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{TEST_DB_PATH}")
+INITIAL_ADMIN_PASSWORD = "admin123456789"
+ACTIVE_ADMIN_PASSWORD = "admin123456789-rotated"
+os.environ.setdefault("ADMIN_BOOTSTRAP_USERNAME", "admin")
+os.environ.setdefault("ADMIN_BOOTSTRAP_PASSWORD", INITIAL_ADMIN_PASSWORD)
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,9 +38,47 @@ def _reset_db() -> None:
     create_db_and_tables()
 
 
-def _basic_auth_headers(username: str = "admin", password: str = "admin123") -> dict[str, str]:
-    token = b64encode(f"{username}:{password}".encode("utf-8")).decode("utf-8")
-    return {"Authorization": f"Basic {token}"}
+def _bearer_headers(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _login_headers(
+    client: TestClient,
+    *,
+    username: str = "admin",
+    candidate_passwords: tuple[str, ...] | None = None,
+) -> dict[str, str]:
+    candidates = candidate_passwords or (ACTIVE_ADMIN_PASSWORD, INITIAL_ADMIN_PASSWORD)
+
+    for password in candidates:
+        login_response = client.post(
+            "/api/admin/auth/login",
+            json={
+                "username": username,
+                "password": password,
+                "remember_me": False,
+            },
+        )
+        if login_response.status_code != 200:
+            continue
+
+        token = login_response.json()["token"]
+        headers = _bearer_headers(token)
+
+        if login_response.json()["user"]["must_change_password"]:
+            change_response = client.post(
+                "/api/admin/account/change-password",
+                json={
+                    "current_password": password,
+                    "new_password": ACTIVE_ADMIN_PASSWORD,
+                },
+                headers=headers,
+            )
+            assert change_response.status_code == 200
+
+        return headers
+
+    raise AssertionError(f"Unable to authenticate admin user '{username}' with the provided test passwords.")
 
 
 @pytest.fixture
@@ -115,10 +156,55 @@ def test_public_landing_reference_and_brand_asset(seeded_db):
     assert asset.headers["content-type"].startswith("image/svg+xml")
 
 
-def test_admin_endpoints_require_basic_auth(empty_db):
+def test_admin_endpoints_require_admin_session(empty_db):
     client = TestClient(app)
     response = client.get("/api/admin/endpoints")
     assert response.status_code == 401
+
+
+def test_bootstrap_password_must_be_rotated_before_admin_access(empty_db):
+    client = TestClient(app)
+
+    login_response = client.post(
+        "/api/admin/auth/login",
+        json={
+            "username": "admin",
+            "password": INITIAL_ADMIN_PASSWORD,
+            "remember_me": False,
+        },
+    )
+    assert login_response.status_code == 200
+    login_payload = login_response.json()
+    assert login_payload["user"]["must_change_password"] is True
+    headers = _bearer_headers(login_payload["token"])
+
+    blocked_response = client.get("/api/admin/endpoints", headers=headers)
+    assert blocked_response.status_code == 403
+    assert "Password change required" in blocked_response.json()["detail"]
+
+    change_response = client.post(
+        "/api/admin/account/change-password",
+        json={
+            "current_password": INITIAL_ADMIN_PASSWORD,
+            "new_password": ACTIVE_ADMIN_PASSWORD,
+        },
+        headers=headers,
+    )
+    assert change_response.status_code == 200
+    assert change_response.json()["user"]["must_change_password"] is False
+
+    restored_response = client.get("/api/admin/endpoints", headers=headers)
+    assert restored_response.status_code == 200
+
+    stale_login_response = client.post(
+        "/api/admin/auth/login",
+        json={
+            "username": "admin",
+            "password": INITIAL_ADMIN_PASSWORD,
+            "remember_me": False,
+        },
+    )
+    assert stale_login_response.status_code == 401
 
 
 def test_get_session_dependency_closes_session_context():
@@ -152,9 +238,92 @@ def test_get_session_dependency_closes_session_context():
         db_module.Session = original_session
 
 
+def test_superusers_can_manage_dashboard_users(empty_db):
+    client = TestClient(app)
+    headers = _login_headers(client)
+
+    create_response = client.post(
+        "/api/admin/users",
+        json={
+            "username": "editor",
+            "password": "editor-password-123",
+            "is_superuser": False,
+            "must_change_password": True,
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+    created_user = create_response.json()
+    assert created_user["username"] == "editor"
+    assert created_user["must_change_password"] is True
+
+    list_response = client.get("/api/admin/users", headers=headers)
+    assert list_response.status_code == 200
+    assert {user["username"] for user in list_response.json()} >= {"admin", "editor"}
+
+    update_response = client.put(
+        f"/api/admin/users/{created_user['id']}",
+        json={
+            "is_active": False,
+            "must_change_password": False,
+        },
+        headers=headers,
+    )
+    assert update_response.status_code == 200
+    updated_user = update_response.json()
+    assert updated_user["is_active"] is False
+    assert updated_user["must_change_password"] is False
+
+    delete_response = client.delete(f"/api/admin/users/{created_user['id']}", headers=headers)
+    assert delete_response.status_code == 204
+
+
+def test_private_admin_paths_cannot_be_created_as_public_mocks(empty_db):
+    client = TestClient(app)
+    headers = _login_headers(client)
+
+    response = client.post(
+        "/api/admin/endpoints",
+        json={
+            "name": "Shadow Admin",
+            "slug": "shadow-admin",
+            "method": "GET",
+            "path": "/api/admin/shadow",
+            "category": "security",
+            "tags": [],
+            "summary": "Should be rejected",
+            "description": "Reserved path",
+            "enabled": True,
+            "auth_mode": "none",
+            "request_schema": {},
+            "response_schema": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "x-mock": {"mode": "fixed", "value": "blocked", "options": {}},
+                    }
+                },
+                "required": ["status"],
+                "x-builder": {"order": ["status"]},
+                "x-mock": {"mode": "generate"},
+            },
+            "success_status_code": 200,
+            "error_rate": 0.0,
+            "latency_min_ms": 0,
+            "latency_max_ms": 0,
+            "seed_key": None,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert "reserved for private admin routes" in response.json()["detail"]
+
+
 def test_admin_crud_lifecycle_supports_builder_extensions(empty_db):
     client = TestClient(app)
-    headers = _basic_auth_headers()
+    headers = _login_headers(client)
     payload = {
         "name": "List Gadgets",
         "slug": "list-gadgets",
@@ -242,7 +411,7 @@ def test_admin_crud_lifecycle_supports_builder_extensions(empty_db):
 
 def test_preview_endpoint_is_seeded_and_type_correct(empty_db):
     client = TestClient(app)
-    headers = _basic_auth_headers()
+    headers = _login_headers(client)
     response_schema = {
         "type": "object",
         "properties": {
@@ -330,7 +499,7 @@ def test_preview_endpoint_is_seeded_and_type_correct(empty_db):
 
 def test_preview_endpoint_upgrades_legacy_text_quotes_to_long_text(empty_db):
     client = TestClient(app)
-    headers = _basic_auth_headers()
+    headers = _login_headers(client)
     response_schema = {
         "type": "object",
         "properties": {
@@ -421,7 +590,7 @@ def test_seeded_device_schemas_use_curated_model_enum_defaults(seeded_db):
 
 def test_runtime_dispatch_ignores_disabled_endpoints(empty_db):
     client = TestClient(app)
-    headers = _basic_auth_headers()
+    headers = _login_headers(client)
 
     create_response = client.post(
         "/api/admin/endpoints",

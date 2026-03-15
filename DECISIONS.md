@@ -107,4 +107,10 @@
 - **Canonical source**: Keep `README.md` and `docs/` in the main repository as the canonical documentation source, and derive the wiki content from those repo docs instead of maintaining a competing source of truth.
 - **Content boundaries**: Exclude internal planning, agent workflow instructions, backlog management, and architecture decision logs from the wiki so the public handbook stays practical and audience-focused.
 
+## 2026-03-15: Admin security hardening and account management
+- **Admin identity model**: Replace the shared env-backed Basic Auth credential pair with DB-backed dashboard users plus bearer session tokens so multiple users can sign in without storing the raw password in the browser.
+- **Bootstrap flow**: Create a one-time bootstrap superuser during DB init, generate its password when `ADMIN_BOOTSTRAP_PASSWORD` is unset, and require that bootstrap/reset password to be rotated before the rest of the admin API unlocks.
+- **User management**: Add a dedicated security surface and admin API for password rotation plus superuser-controlled user creation, editing, disabling, and deletion.
+- **Route separation**: Reserve `/api/admin` and other system-owned public paths such as `/api` and `/api/reference.json` so DB-defined public mock endpoints cannot collide with or impersonate private admin routes.
+
 *> Future decisions should append a dated entry with context and rationale.*

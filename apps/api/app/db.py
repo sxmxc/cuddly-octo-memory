@@ -11,7 +11,6 @@ from sqlmodel import create_engine, Session
 
 from app import models  # noqa: F401  # Import models so SQLModel metadata is registered.
 from app.config import Settings
-
 settings = Settings()
 APP_ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_INI_PATH = APP_ROOT / "alembic.ini"
@@ -43,6 +42,12 @@ def run_migrations() -> None:
 
 def create_db_and_tables() -> None:
     run_migrations()
+    from app.services.admin_auth import ensure_bootstrap_admin, log_bootstrap_result
+
+    with session_scope() as session:
+        bootstrap_result = ensure_bootstrap_admin(session)
+    if bootstrap_result is not None:
+        log_bootstrap_result(bootstrap_result)
 
 
 @contextmanager

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { hasCredentials } from "../api/admin";
 import { useAuth } from "../composables/useAuth";
 
 const auth = useAuth();
@@ -23,17 +22,12 @@ const redirectTarget = computed(() => {
 async function handleSubmit(): Promise<void> {
   formError.value = null;
 
-  const nextCredentials = {
-    username: credentials.username.trim(),
-    password: credentials.password,
-  };
-
-  if (!hasCredentials(nextCredentials)) {
+  if (!credentials.username.trim() || !credentials.password) {
     formError.value = "Enter both username and password.";
     return;
   }
 
-  const result = await auth.login(nextCredentials, { rememberMe: rememberMe.value });
+  const result = await auth.login(credentials.username, credentials.password, { rememberMe: rememberMe.value });
 
   if (!result.ok) {
     formError.value = result.error ?? "We could not sign you in.";
@@ -74,7 +68,7 @@ async function handleSubmit(): Promise<void> {
             </template>
 
             <v-card-title>Sign in to the studio</v-card-title>
-            <v-card-subtitle>Use the admin credentials configured for this environment.</v-card-subtitle>
+            <v-card-subtitle>Use your dashboard account. Fresh installs may print a one-time bootstrap password in the API logs.</v-card-subtitle>
           </v-card-item>
 
           <v-divider />
@@ -123,7 +117,7 @@ async function handleSubmit(): Promise<void> {
               />
 
               <div class="text-caption text-medium-emphasis">
-                Leave this off on a shared machine. When enabled, Mockingbird will restore this browser the next time you return.
+                Leave this off on a shared machine. When enabled, Mockingbird restores a session token instead of storing your password in the browser.
               </div>
 
               <v-btn

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,8 +16,17 @@ class Settings(BaseSettings):
     postgres_host: str = Field(default="postgres", validation_alias="POSTGRES_HOST")
     postgres_port: int = Field(default=5432, validation_alias="POSTGRES_PORT")
 
-    admin_username: str = Field(default="admin", validation_alias="ADMIN_USERNAME")
-    admin_password: str = Field(default="admin123", validation_alias="ADMIN_PASSWORD")
+    admin_bootstrap_username: str = Field(
+        default="admin",
+        validation_alias=AliasChoices("ADMIN_BOOTSTRAP_USERNAME", "ADMIN_USERNAME"),
+    )
+    admin_bootstrap_password: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ADMIN_BOOTSTRAP_PASSWORD", "ADMIN_PASSWORD"),
+    )
+    admin_password_min_length: int = Field(default=12, validation_alias="ADMIN_PASSWORD_MIN_LENGTH")
+    admin_session_ttl_hours: int = Field(default=12, validation_alias="ADMIN_SESSION_TTL_HOURS")
+    admin_remember_me_ttl_days: int = Field(default=30, validation_alias="ADMIN_REMEMBER_ME_TTL_DAYS")
 
     enable_openapi: bool = Field(default=True, validation_alias="ENABLE_OPENAPI")
 

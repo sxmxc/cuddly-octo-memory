@@ -364,7 +364,7 @@ function duplicateSelectedNode(): void {
 }
 
 async function runPreview(force = false): Promise<void> {
-  if (props.scope !== "response" || !auth.credentials.value) {
+  if (props.scope !== "response" || !auth.session.value) {
     return;
   }
 
@@ -376,12 +376,12 @@ async function runPreview(force = false): Promise<void> {
   previewError.value = null;
 
   try {
-    const response = await previewResponse(liveSchema.value, normalizedSeedKey.value, auth.credentials.value);
+    const response = await previewResponse(liveSchema.value, normalizedSeedKey.value, auth.session.value);
     previewBody.value = JSON.stringify(response.preview, null, 2);
     previewStatus.value = "success";
   } catch (error) {
     if (error instanceof AdminApiError && error.status === 401) {
-      auth.logout("Your admin session expired. Sign in again before previewing response schemas.");
+      void auth.logout("Your admin session expired. Sign in again before previewing response schemas.");
       void router.push({ name: "login" });
       return;
     }

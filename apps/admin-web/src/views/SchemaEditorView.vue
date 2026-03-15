@@ -71,7 +71,7 @@ watch(
 );
 
 async function loadEndpoint(): Promise<void> {
-  if (!endpointId.value || !auth.credentials.value) {
+  if (!endpointId.value || !auth.session.value) {
     isLoading.value = false;
     loadError.value = "Missing endpoint id.";
     return;
@@ -82,14 +82,14 @@ async function loadEndpoint(): Promise<void> {
   pageError.value = null;
 
   try {
-    const loadedEndpoint = await getEndpoint(endpointId.value, auth.credentials.value);
+    const loadedEndpoint = await getEndpoint(endpointId.value, auth.session.value);
     endpoint.value = loadedEndpoint;
     requestSchema.value = loadedEndpoint.request_schema ?? {};
     responseSchema.value = loadedEndpoint.response_schema ?? {};
     seedKey.value = loadedEndpoint.seed_key ?? "";
   } catch (error) {
     if (error instanceof AdminApiError && error.status === 401) {
-      auth.logout("Your admin session expired. Sign in again before editing schemas.");
+      void auth.logout("Your admin session expired. Sign in again before editing schemas.");
       void router.push({ name: "login" });
       return;
     }
@@ -113,7 +113,7 @@ function resetToSavedState(): void {
 }
 
 async function saveSchemas(): Promise<void> {
-  if (!endpoint.value || !auth.credentials.value) {
+  if (!endpoint.value || !auth.session.value) {
     return;
   }
 
@@ -144,7 +144,7 @@ async function saveSchemas(): Promise<void> {
         response_schema: responseSchema.value,
         seed_key: seedKey.value.trim() ? seedKey.value.trim() : null,
       }),
-      auth.credentials.value,
+      auth.session.value,
     );
 
     endpoint.value = updatedEndpoint;
@@ -154,7 +154,7 @@ async function saveSchemas(): Promise<void> {
     pageSuccess.value = `Saved schema changes for ${updatedEndpoint.name}.`;
   } catch (error) {
     if (error instanceof AdminApiError && error.status === 401) {
-      auth.logout("Your admin session expired. Sign in again before saving schema changes.");
+      void auth.logout("Your admin session expired. Sign in again before saving schema changes.");
       void router.push({ name: "login" });
       return;
     }

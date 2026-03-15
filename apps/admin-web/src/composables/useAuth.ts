@@ -1,13 +1,16 @@
 import { computed, reactive } from "vue";
 import {
   AdminApiError,
-  clearStoredCredentials,
-  hasCredentials,
-  listEndpoints,
-  loadStoredCredentials,
-  persistCredentials,
+  clearStoredSession,
+  getCurrentSession,
+  hasSession,
+  loadStoredSession,
+  loginAdmin,
+  logoutAdmin,
+  persistSession,
+  updateStoredSession,
 } from "../api/admin";
-import type { AdminCredentials } from "../types/endpoints";
+import type { AdminLoginPayload, AdminSession, AdminSessionSnapshot, AdminUser } from "../types/endpoints";
 
 type AuthStatus = "restoring" | "logged_out" | "authenticating" | "authenticated";
 
@@ -22,26 +25,41 @@ interface LoginResult {
 
 function normalizeAuthError(error: unknown, fallbackMessage: string): string {
   if (error instanceof AdminApiError && error.status === 401) {
-    return "Those credentials were rejected. Check the admin username and password from the backend environment.";
+    return "Those credentials were rejected.";
   }
 
   return error instanceof Error ? error.message : fallbackMessage;
 }
 
 const state = reactive<{
-  credentials: AdminCredentials | null;
+  session: AdminSession | null;
   sessionMessage: string | null;
   status: AuthStatus;
 }>({
-  credentials: null,
+  session: null,
   sessionMessage: null,
   status: "restoring",
 });
 
 let bootPromise: Promise<void> | null = null;
 
-export const authUsername = computed(() => state.credentials?.username ?? null);
-export const isAuthenticated = computed(() => state.status === "authenticated" && hasCredentials(state.credentials));
+export const authUsername = computed(() => state.session?.user.username ?? null);
+export const isAuthenticated = computed(() => state.status === "authenticated" && hasSession(state.session));
+export const isSuperuser = computed(() => Boolean(state.session?.user.is_superuser));
+export const mustChangePassword = computed(() => Boolean(state.session?.user.must_change_password));
+
+function applySessionSnapshot(snapshot: AdminSessionSnapshot): void {
+  if (!state.session) {
+    return;
+  }
+
+  state.session = {
+    ...state.session,
+    expires_at: snapshot.expires_at,
+    user: snapshot.user,
+  };
+  updateStoredSession(state.session);
+}
 
 export async function ensureAuthBooted(): Promise<void> {
   if (bootPromise) {
@@ -49,10 +67,10 @@ export async function ensureAuthBooted(): Promise<void> {
   }
 
   bootPromise = (async () => {
-    const bootCredentials = loadStoredCredentials();
+    const bootSession = loadStoredSession();
 
-    if (!hasCredentials(bootCredentials)) {
-      state.credentials = null;
+    if (!hasSession(bootSession)) {
+      state.session = null;
       state.status = "logged_out";
       return;
     }
@@ -60,12 +78,17 @@ export async function ensureAuthBooted(): Promise<void> {
     state.status = "restoring";
 
     try {
-      await listEndpoints(bootCredentials);
-      state.credentials = bootCredentials;
+      const snapshot = await getCurrentSession(bootSession);
+      state.session = {
+        ...bootSession,
+        expires_at: snapshot.expires_at,
+        user: snapshot.user,
+      };
+      updateStoredSession(state.session);
       state.status = "authenticated";
     } catch (error) {
-      clearStoredCredentials();
-      state.credentials = null;
+      clearStoredSession();
+      state.session = null;
       state.status = "logged_out";
       state.sessionMessage = normalizeAuthError(error, "Your saved admin session could not be restored.");
     }
@@ -78,8 +101,8 @@ export async function ensureAuthBooted(): Promise<void> {
   }
 }
 
-export async function login(nextCredentials: AdminCredentials, options: LoginOptions): Promise<LoginResult> {
-  if (!hasCredentials(nextCredentials)) {
+export async function login(username: string, password: string, options: LoginOptions): Promise<LoginResult> {
+  if (!username.trim() || !password) {
     return { ok: false, error: "Enter both username and password." };
   }
 
@@ -87,24 +110,55 @@ export async function login(nextCredentials: AdminCredentials, options: LoginOpt
   state.sessionMessage = null;
 
   try {
-    await listEndpoints(nextCredentials);
-    state.credentials = nextCredentials;
-    persistCredentials(nextCredentials, options.rememberMe);
+    const session = await loginAdmin({
+      username: username.trim(),
+      password,
+      remember_me: options.rememberMe,
+    } satisfies AdminLoginPayload);
+    state.session = session;
+    persistSession(session, options.rememberMe);
     state.status = "authenticated";
     return { ok: true };
   } catch (error) {
-    clearStoredCredentials();
-    state.credentials = null;
+    clearStoredSession();
+    state.session = null;
     state.status = "logged_out";
     return { ok: false, error: normalizeAuthError(error, "We could not sign you in.") };
   }
 }
 
-export function logout(message?: string): void {
-  clearStoredCredentials();
-  state.credentials = null;
+export async function logout(message?: string): Promise<void> {
+  const session = state.session;
+  clearStoredSession();
+  state.session = null;
   state.status = "logged_out";
   state.sessionMessage = message ?? null;
+
+  if (!session) {
+    return;
+  }
+
+  try {
+    await logoutAdmin(session);
+  } catch {
+    // The local session is already gone, so a network failure here should not block sign-out UX.
+  }
+}
+
+export function updateCurrentSession(snapshot: AdminSessionSnapshot): void {
+  applySessionSnapshot(snapshot);
+}
+
+export function updateCurrentUser(user: AdminUser): void {
+  if (!state.session) {
+    return;
+  }
+
+  state.session = {
+    ...state.session,
+    user,
+  };
+  updateStoredSession(state.session);
 }
 
 export function clearSessionMessage(): void {
@@ -115,13 +169,18 @@ export function useAuth() {
   return {
     state,
     status: computed(() => state.status),
-    credentials: computed(() => state.credentials),
+    session: computed(() => state.session),
     sessionMessage: computed(() => state.sessionMessage),
+    user: computed(() => state.session?.user ?? null),
     username: authUsername,
     isAuthenticated,
+    isSuperuser,
+    mustChangePassword,
     clearSessionMessage,
     login,
     logout,
     ensureBooted: ensureAuthBooted,
+    updateCurrentSession,
+    updateCurrentUser,
   };
 }

@@ -6,10 +6,11 @@ Mockingbird is built as a **monorepo** with a public API surface and a private a
 
 - **Backend (`apps/api/`)**
   - FastAPI application serving two sets of endpoints:
-    - **Admin API**: CRUD operations for mock endpoints and configuration.
+    - **Admin API**: bearer-session auth, dashboard-user management, password rotation, and CRUD operations for mock endpoints and configuration.
     - **Public mock API**: dynamically routed endpoints based on DB definitions.
     - **Public landing/reference**: a branded homepage at `/` and `/api` plus `/api/reference.json`, both driven from the same live endpoint catalog. The landing hero can read approved frame artwork from `apps/api/static/landing/`.
   - **Postgres** is used as the single source of truth for endpoint definitions.
+  - Private admin path space such as `/api/admin` is reserved and cannot be claimed by DB-backed public mock endpoints.
   - **OpenAPI generation** is performed at runtime from the active endpoint catalog.
   - **Mock generation** supports fixed, true-random, and mocking-random response values from `response_schema`, with explicit semantic value types for context-aware data like IDs, names, emails, prices, and long-form text fields.
 

@@ -4,9 +4,54 @@ export interface JsonObject {
   [key: string]: JsonValue;
 }
 
-export interface AdminCredentials {
+export interface AdminUser {
+  id: number;
+  username: string;
+  is_active: boolean;
+  is_superuser: boolean;
+  must_change_password: boolean;
+  last_login_at: string | null;
+  password_changed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminSession {
+  token: string;
+  expires_at: string;
+  user: AdminUser;
+}
+
+export interface AdminSessionSnapshot {
+  expires_at: string;
+  user: AdminUser;
+}
+
+export interface AdminLoginPayload {
   username: string;
   password: string;
+  remember_me: boolean;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+}
+
+export interface AdminUserCreatePayload {
+  username: string;
+  password: string;
+  is_active?: boolean;
+  is_superuser?: boolean;
+  must_change_password?: boolean;
+}
+
+export interface AdminUserUpdatePayload {
+  username?: string;
+  password?: string;
+  is_active?: boolean;
+  is_superuser?: boolean;
+  must_change_password?: boolean;
 }
 
 export interface EndpointPayload {

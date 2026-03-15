@@ -67,6 +67,56 @@ class PreviewResponse(BaseModel):
     preview: Any
 
 
+class AdminUserRead(BaseModel):
+    id: int
+    username: str
+    is_active: bool
+    is_superuser: bool
+    must_change_password: bool
+    last_login_at: Optional[datetime] = None
+    password_changed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+    remember_me: bool = False
+
+
+class AdminSessionRead(BaseModel):
+    user: AdminUserRead
+    expires_at: datetime
+
+
+class AdminLoginResponse(AdminSessionRead):
+    token: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class AdminUserCreate(BaseModel):
+    username: str
+    password: str
+    is_active: bool = True
+    is_superuser: bool = False
+    must_change_password: bool = True
+
+
+class AdminUserUpdate(BaseModel):
+    username: Optional[str] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_superuser: Optional[bool] = None
+    must_change_password: Optional[bool] = None
+
+
 class PublicEndpointReference(BaseModel):
     id: int
     name: str

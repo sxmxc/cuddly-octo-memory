@@ -3,13 +3,22 @@
 The admin UI is a Vue + Vite + Vuetify application that lets users manage mock endpoints.
 
 ## Key screens
-- **Login**: Dedicated sign-in screen for backend Basic Auth credentials, with a concise studio introduction above the form, explicit remember-me behavior, and session restore handling.
+- **Login**: Dedicated sign-in screen for dashboard users, with a concise studio introduction above the form, explicit remember-me behavior, and bootstrap-password guidance for fresh installs.
 - **Catalog + settings**: Browse the live catalog, search/filter routes, and edit endpoint identity/runtime behavior without competing against the schema canvas.
 - **Schema studio**: Dedicated request/response builder route with draggable Vuetify `v-chip` palette pills, a nested tree canvas, a left-rail inspector, import/copy actions, and a preview-focused right rail.
 - **Preview**: Call the public mock route with the configured method and path parameters to inspect the live response payload.
+- **Security**: Change the signed-in user's password and, for superusers, create/edit/delete other dashboard users.
 
 ## API contract
 The frontend communicates with the backend via the admin API under `/api/admin`.
+- `POST /api/admin/auth/login`
+- `GET /api/admin/auth/me`
+- `POST /api/admin/auth/logout`
+- `POST /api/admin/account/change-password`
+- `GET /api/admin/users`
+- `POST /api/admin/users`
+- `PUT /api/admin/users/{id}`
+- `DELETE /api/admin/users/{id}`
 - `GET /api/admin/endpoints`
 - `GET /api/admin/endpoints/{id}`
 - `POST /api/admin/endpoints`
@@ -18,8 +27,9 @@ The frontend communicates with the backend via the admin API under `/api/admin`.
 - `POST /api/admin/endpoints/preview-response`
 
 ## UX notes
-- Logged-out users should only see the sign-in journey; catalog/editor/preview controls should stay hidden until authentication succeeds.
-- Active sessions live in browser `sessionStorage`; remember-me additionally copies credentials to `localStorage` so reloads and restarts can restore the session.
+- Logged-out users should only see the sign-in journey; catalog/editor/preview/security controls should stay hidden until authentication succeeds.
+- Active sessions live in browser `sessionStorage`; remember-me additionally copies a bearer session token to `localStorage` so reloads and restarts can restore the session without persisting the raw password.
+- New bootstrap or reset passwords must be rotated through the dedicated security screen before endpoint CRUD or user-management routes unlock.
 - The settings page and schema studio are intentionally separate so endpoint metadata/behavior edits do not crowd the schema authoring flow.
 - The fixed top bar should own the full top edge of the admin app; desktop scrolling should happen inside the main content shell so the scrollbar starts below the header instead of beside it.
 - Navigating between major admin surfaces should reset the main content shell back to the top, so routes like the schema studio do not inherit a half-scrolled workspace from the previous page.
