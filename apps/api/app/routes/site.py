@@ -2142,7 +2142,7 @@ def _status_tone(status_code: object) -> str:
 def _build_reference(session: Session) -> dict:
     endpoints = list_endpoints(session, limit=1000)
     payload = build_public_reference(endpoints)
-    response = PublicReferenceResponse(**payload).dict()
+    response = PublicReferenceResponse(**payload).model_dump()
     response["endpoints"] = _sort_reference_endpoints(response)
     return response
 

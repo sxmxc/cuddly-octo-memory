@@ -406,8 +406,8 @@ function previewModeLabel(mode: MockMode): string {
 
 <template>
   <v-row class="schema-studio-grid" @dragend="clearDragPayload">
-    <v-col cols="12" xl="3" lg="3">
-      <div class="d-flex flex-column ga-4">
+    <v-col class="schema-sidebar-col" cols="12" xl="3" lg="3">
+      <div class="schema-sidebar d-flex flex-column ga-4">
         <v-card class="workspace-card">
           <v-card-item>
             <template #prepend>
@@ -823,3 +823,34 @@ function previewModeLabel(mode: MockMode): string {
     </v-card>
   </v-dialog>
 </template>
+
+<style scoped>
+.schema-sidebar {
+  width: 100%;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.schema-sidebar > * {
+  flex: 0 0 auto;
+}
+
+@media (min-width: 1280px) {
+  .schema-sidebar-col {
+    display: flex;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+  }
+
+  .schema-sidebar {
+    height: calc(100vh - var(--v-layout-top, 88px) - 3rem);
+    max-height: calc(100vh - var(--v-layout-top, 88px) - 3rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 0.35rem;
+    padding-bottom: 0.35rem;
+    scrollbar-gutter: stable;
+  }
+}
+</style>

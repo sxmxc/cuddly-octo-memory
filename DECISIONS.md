@@ -90,4 +90,16 @@
 - **Artifacts and provenance**: Upload per-image metadata artifacts (image name, version, digest, tags, build metadata/manifest) and attach provenance/SBOM data so CI/CD outputs are inspectable and easier to trust.
 - **Standalone deploy example**: Keep a separate GHCR-backed Compose example for environments without a local checkout, and default that example to `edge` for convenience while recommending explicit release tags for real deployments.
 
+## 2026-03-15: Runtime and dependency refresh
+- **Workflow runtime**: Move GitHub Actions onto the current Node 24 JavaScript-action runtime path, upgrade the action majors accordingly, and explicitly opt workflows into `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` so the repo catches compatibility regressions before GitHub flips the default.
+- **Supported runtimes**: Standardize the project on Node 24 and Python 3.12 across Dockerfiles, CI, and local version files so contributors are less likely to drift onto stale or mismatched runtimes.
+- **Security baseline**: Upgrade the backend to the current FastAPI/Pydantic/SQLModel line and the frontend to Vite 8 so the repo clears the audited Starlette/Black and Vite/esbuild advisories.
+- **Frontend linting**: Move the admin app to ESLint flat config so the repo can run ESLint 10 with the current Vue parser/plugin line and stop printing deprecated-package notices during `npm ci`.
+- **Transitive override**: Override `js-beautify`'s `glob` dependency to a current non-deprecated major because that package is only used through frontend test tooling and the older line was still emitting install-time deprecation warnings.
+
+## 2026-03-15: Feature-branch and PR-driven release workflow
+- **Working branch policy**: Do feature work on named `feature/*` or other task-specific working branches rather than committing directly to `main`.
+- **Release note source**: Treat detailed pull requests as the canonical changelog input so automated releases can summarize shipped work from merged PR metadata instead of relying on direct commits to the default branch.
+- **Merge discipline**: Keep `main` as the integration/release branch and prefer changes to land through reviewable PRs that describe user-facing impact, risk, and verification.
+
 *> Future decisions should append a dated entry with context and rationale.*

@@ -167,7 +167,7 @@ async function saveSchemas(): Promise<void> {
 </script>
 
 <template>
-  <div class="d-flex flex-column ga-4">
+  <div class="schema-editor-page d-flex flex-column ga-4">
     <div class="d-flex flex-column flex-lg-row justify-space-between ga-4">
       <div>
         <div class="text-overline text-secondary">Dedicated schema studio</div>
@@ -276,20 +276,32 @@ async function saveSchemas(): Promise<void> {
         </v-card-text>
       </v-card>
 
-      <SchemaEditorWorkspace
-        v-if="tab === 'request'"
-        :schema="requestSchema"
-        scope="request"
-        @update:schema="requestSchema = $event"
-      />
+      <div class="schema-workspace-shell">
+        <SchemaEditorWorkspace
+          v-if="tab === 'request'"
+          :schema="requestSchema"
+          scope="request"
+          @update:schema="requestSchema = $event"
+        />
 
-      <SchemaEditorWorkspace
-        v-else
-        :schema="responseSchema"
-        scope="response"
-        :seed-key="seedKey"
-        @update:schema="responseSchema = $event"
-      />
+        <SchemaEditorWorkspace
+          v-else
+          :schema="responseSchema"
+          :seed-key="seedKey"
+          scope="response"
+          @update:schema="responseSchema = $event"
+        />
+      </div>
     </template>
   </div>
 </template>
+
+<style scoped>
+.schema-editor-page {
+  min-height: 100%;
+}
+
+.schema-workspace-shell {
+  min-height: 0;
+}
+</style>

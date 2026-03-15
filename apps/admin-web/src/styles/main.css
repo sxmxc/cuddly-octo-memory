@@ -6,11 +6,12 @@
 html,
 body,
 #app {
-  min-height: 100%;
+  height: 100%;
 }
 
 body {
   margin: 0;
+  overflow: hidden;
   background:
     radial-gradient(circle at top left, rgba(198, 123, 66, 0.12), transparent 28%),
     radial-gradient(circle at top right, rgba(36, 90, 125, 0.18), transparent 22%),
@@ -21,13 +22,27 @@ body {
   box-sizing: border-box;
 }
 
-.studio-app,
+.studio-app {
+  height: 100vh;
+  overflow: hidden;
+}
+
 .studio-main {
   min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .studio-main {
   position: relative;
+}
+
+.studio-shell {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .studio-main::before {
@@ -190,6 +205,10 @@ body {
 
 .schema-tab-shell {
   min-width: min(100%, 360px);
+}
+
+.endpoint-sidbar-col {
+  top: 1rem;
 }
 
 .code-block {

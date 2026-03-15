@@ -21,8 +21,13 @@ The frontend communicates with the backend via the admin API under `/api/admin`.
 - Logged-out users should only see the sign-in journey; catalog/editor/preview controls should stay hidden until authentication succeeds.
 - Active sessions live in browser `sessionStorage`; remember-me additionally copies credentials to `localStorage` so reloads and restarts can restore the session.
 - The settings page and schema studio are intentionally separate so endpoint metadata/behavior edits do not crowd the schema authoring flow.
+- The fixed top bar should own the full top edge of the admin app; desktop scrolling should happen inside the main content shell so the scrollbar starts below the header instead of beside it.
+- Navigating between major admin surfaces should reset the main content shell back to the top, so routes like the schema studio do not inherit a half-scrolled workspace from the previous page.
 - The endpoint catalog/settings workspace should keep the left rail and top-level shell mounted while switching between browse/create/edit records, leaving the visible transition scoped to the right-hand record pane.
 - On desktop, the endpoint catalog rail should act like a bounded navigator with its own vertical scroll region and client-side pagination so long catalogs do not push the main editor down the page.
+- The desktop endpoint workspace should let the catalog card fill the full left rail, pin that rail within the main content shell, and leave the right-hand settings pane on the main content scroll while the catalog list keeps its own internal scroll region.
+- Endpoint list cards should stay compact and scannable: clear method badge, strong route name, one-line route/category metadata, and a balanced horizontal live-state/action cluster with enough breathing room to stay easy to scan.
+- The desktop schema studio should keep the left palette/root-shape/inspector cards intact, pin that full rail within the 3-column workspace, and let the whole rail scroll as one unit without making the canvas or preview move.
 - Duplicating an endpoint should open the create flow with a prefilled copy, auto-adjust the name/slug/path, and default the duplicate to disabled so the user can review it before publishing.
 - The schema studio is builder-first: users drag Vuetify chip pills into a tree workspace, edit node settings in the left inspector rail, and use import/copy actions only as advanced helpers.
 - Response nodes can be static, true-random, or mocking-random per field; request nodes stay schema-only and intentionally omit mock controls.

@@ -101,7 +101,7 @@ function signOut(): void {
     </v-app-bar>
 
     <v-main class="studio-main">
-      <v-container class="fill-height px-3 px-sm-6 py-6" fluid>
+      <v-container class="studio-shell fill-height px-3 px-sm-6 py-6" fluid>
         <router-view v-slot="{ Component }">
           <v-fade-transition mode="out-in">
             <component :is="Component" :key="pageTransitionKey" />

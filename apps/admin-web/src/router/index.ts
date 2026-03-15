@@ -101,9 +101,19 @@ router.beforeEach(async (to) => {
   return true;
 });
 
-router.afterEach((to) => {
+router.afterEach((to, from) => {
   if (typeof document !== "undefined") {
     const pageTitle = typeof to.meta.title === "string" ? to.meta.title : "Mockingbird Studio";
     document.title = `Mockingbird Admin | ${pageTitle}`;
+
+    const nextShell = typeof to.meta.transitionShell === "string" ? to.meta.transitionShell : "";
+    const previousShell = typeof from.meta.transitionShell === "string" ? from.meta.transitionShell : "";
+    const shouldResetShellScroll = to.name !== from.name || nextShell !== previousShell;
+
+    if (shouldResetShellScroll) {
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>(".studio-shell")?.scrollTo({ top: 0, left: 0 });
+      });
+    }
   }
 });

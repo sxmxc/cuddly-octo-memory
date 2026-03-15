@@ -1,5 +1,8 @@
 # Mockingbird
 
+[![CI](https://github.com/sxmxc/mockingbird/actions/workflows/ci.yml/badge.svg)](https://github.com/sxmxc/mockingbird/actions/workflows/ci.yml)
+[![Container Images](https://github.com/sxmxc/mockingbird/actions/workflows/images.yml/badge.svg)](https://github.com/sxmxc/mockingbird/actions/workflows/images.yml)
+
 A Docker-first mock API platform with a live public landing page, dynamic OpenAPI, a private admin dashboard, and configurable endpoint mocking. Designed for developers who want realistic API shapes with a little personality.
 
 ## 🚀 Quickstart (Local)

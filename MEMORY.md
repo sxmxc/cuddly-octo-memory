@@ -47,12 +47,19 @@ Provide a Docker-first platform to define and serve configurable mock APIs with 
 - Response nodes now also store an explicit semantic mock value type, so random and mocking generation can stay context-aware for values like IDs, names, first names, emails, prices, and longer quote/message-style strings.
 - Runtime preview generation now normalizes older stored response schemas before sampling, so legacy quote/message fields that were previously saved as plain `text` still produce long-text examples on the public homepage and live mock routes.
 - The catalog/settings surface keeps general endpoint metadata and runtime behavior separate from schema editing, so the builder no longer competes with the record settings form on one page.
+- The admin app now scrolls inside the main content shell instead of the browser window, so the fixed top bar owns the full top edge and desktop scrollbars start below the header.
+- Navigating between major admin routes now resets the main content shell scroll position, so schema studio and preview pages do not inherit a stale scroll offset from the previous screen.
+- The admin endpoint workspace now lets the catalog card own the full left rail without the old "Workspace ready" intro widget, pins that catalog rail within the main content shell on desktop with its own internal list scroll, and leaves the right-hand settings form on the main content scroll.
+- The schema studio now keeps the left palette/root-shape/inspector cards intact, pins that full rail within the 3-column workspace, and lets it scroll as one column without making the canvas and preview columns move just because the inspector gets long.
+- The endpoint catalog now uses a denser two-line card treatment with a compact method badge, inline route/category metadata, and a roomier horizontal status/action cluster so more records fit without feeling cramped.
 - API startup now runs `alembic upgrade head`, and the first revision migrates legacy `example_template` / `response_mode` rows into the unified schema-builder contract.
 - Frontend coverage now includes schema-tree utility tests plus a Vue component smoke test for the Vuetify catalog search flow under Vitest.
 - Frontend startup now refreshes the Dockerized `node_modules` volume automatically when `package-lock.json` changes, which reduces bind-mount drift and local permissions headaches.
 - The repo now includes a project-level Vuetify MCP config and frontend scripts for running the local Vuetify MCP server when needed.
 - The Dockerfiles now expose separate `dev` and `runtime` targets so local Compose can stay hot-reload friendly while CI/CD publishes production-ready API and static-admin images.
 - The API runtime version now comes from `APP_VERSION`, which lets release images stamp OpenAPI metadata with the published version, and the admin runtime image serves its built SPA through Nginx with a configurable `API_UPSTREAM`.
+- The dependency audit pass now targets Python 3.12 and Node 24 across Docker, local version files, and GitHub Actions; the backend runs on FastAPI 0.135 + Pydantic 2 + SQLModel 0.0.37, the frontend runs on Vite 8, workflow badges live in the README, and both `pip-audit` and `npm audit` are currently clean.
+- The admin frontend now also uses ESLint 10 flat config with current Vue parser/plugin packages, and `npm ci` no longer emits the old `eslint` / `rimraf` / `glob` / `inflight` deprecation warnings during container startup.
 
 ## Known Risks
 - Live OpenAPI generation may become slow if not cached.
@@ -75,11 +82,13 @@ Provide a Docker-first platform to define and serve configurable mock APIs with 
 - The API image now installs dev dependencies too, so `make test` and `make lint` work against the same Dockerized backend environment.
 - Pytest filters a known third-party `python_multipart` pending deprecation warning so local verification output stays focused on project issues.
 - The frontend Vite dev server now supports env-driven `FRONTEND_ALLOWED_HOSTS` and `FRONTEND_DEV_PROXY_TARGET` for remote-host access and Docker-safe API proxying.
+- The frontend lint config now lives in `apps/admin-web/eslint.config.mjs`; the older `.eslintrc` file is gone.
 - Public landing artwork should be added under `apps/api/static/landing/`; the backend prefers matching `hero-top` and `hero-bottom` assets and otherwise falls back to the first matching `hero` asset across `.svg`, `.png`, `.jpg`, `.jpeg`, `.webp`, or `.avif`.
-- The admin frontend now expects Node 22+ when run locally because `@vuetify/v0` requires it.
+- The admin frontend now targets Node 24+ locally, and the repo root includes `.node-version` / `.python-version` files to keep local runtimes aligned with CI and Docker.
 - Response schemas may contain internal `x-mock` and `x-builder` keys for generation and tree ordering; public OpenAPI strips those keys before publishing.
 - Alembic lives under `apps/api/migrations/`, and both `start.sh` and `scripts/seed.sh` run the migration bootstrap before serving or seeding.
 - Active admin sessions now live in `sessionStorage`, while the explicit remember-me path additionally copies credentials to `localStorage` so page refreshes stay smooth without always making credentials durable.
 - Vuetify MCP is configured at the repo root via `.mcp.json`, and the frontend package exposes `npm run mcp:vuetify` plus `npm run mcp:vuetify:http` for local MCP usage.
 - Official container images now follow a tag-driven release scheme: `vX.Y.Z` tags publish semver image tags plus `latest`, while default-branch builds publish branch/`edge`/`sha-*` tags alongside uploaded image metadata artifacts and provenance attestations.
 - The standalone deployment example targets `ghcr.io/sxmxc/mockingbird-api` and `ghcr.io/sxmxc/mockingbird-admin-web`, defaults to `IMAGE_TAG=edge`, and should be pinned to a numbered release tag for production use.
+- `make up` can still fail locally if another Mockingbird checkout is already bound to ports `8000` and `3000`; the compose files themselves now build cleanly on the upgraded runtime line.

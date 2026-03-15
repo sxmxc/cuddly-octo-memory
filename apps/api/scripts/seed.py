@@ -70,7 +70,7 @@ def _upsert_endpoint(session: Session, payload: EndpointCreate) -> EndpointDefin
     statement = select(EndpointDefinition).where(EndpointDefinition.slug == payload.slug)
     existing = session.execute(statement).scalars().first()
     if existing:
-        for key, value in payload.dict().items():
+        for key, value in payload.model_dump().items():
             setattr(existing, key, value)
         session.add(existing)
         session.commit()

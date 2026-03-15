@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class EndpointBase(BaseModel):
@@ -31,23 +31,23 @@ class EndpointCreate(EndpointBase):
 
 
 class EndpointUpdate(BaseModel):
-    name: Optional[str]
-    slug: Optional[str]
-    method: Optional[str]
-    path: Optional[str]
-    category: Optional[str]
-    tags: Optional[List[str]]
-    summary: Optional[str]
-    description: Optional[str]
-    enabled: Optional[bool]
-    auth_mode: Optional[str]
-    request_schema: Optional[Dict[str, Any]]
-    response_schema: Optional[Dict[str, Any]]
-    success_status_code: Optional[int]
-    error_rate: Optional[float]
-    latency_min_ms: Optional[int]
-    latency_max_ms: Optional[int]
-    seed_key: Optional[str]
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    method: Optional[str] = None
+    path: Optional[str] = None
+    category: Optional[str] = None
+    tags: Optional[List[str]] = None
+    summary: Optional[str] = None
+    description: Optional[str] = None
+    enabled: Optional[bool] = None
+    auth_mode: Optional[str] = None
+    request_schema: Optional[Dict[str, Any]] = None
+    response_schema: Optional[Dict[str, Any]] = None
+    success_status_code: Optional[int] = None
+    error_rate: Optional[float] = None
+    latency_min_ms: Optional[int] = None
+    latency_max_ms: Optional[int] = None
+    seed_key: Optional[str] = None
 
 
 class EndpointRead(EndpointBase):
@@ -55,8 +55,7 @@ class EndpointRead(EndpointBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PreviewRequest(BaseModel):

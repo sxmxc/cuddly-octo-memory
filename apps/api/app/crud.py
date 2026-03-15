@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import select
@@ -8,6 +7,7 @@ from sqlmodel import Session
 
 from app.models import EndpointDefinition
 from app.schemas import EndpointCreate, EndpointUpdate
+from app.time_utils import utc_now
 
 
 def get_endpoint(session: Session, endpoint_id: int) -> Optional[EndpointDefinition]:
@@ -29,7 +29,7 @@ def list_endpoints(session: Session, limit: int = 100, offset: int = 0) -> List[
 
 
 def create_endpoint(session: Session, endpoint_in: EndpointCreate) -> EndpointDefinition:
-    endpoint = EndpointDefinition(**endpoint_in.dict())
+    endpoint = EndpointDefinition(**endpoint_in.model_dump())
     session.add(endpoint)
     session.commit()
     session.refresh(endpoint)
@@ -37,10 +37,10 @@ def create_endpoint(session: Session, endpoint_in: EndpointCreate) -> EndpointDe
 
 
 def update_endpoint(session: Session, endpoint: EndpointDefinition, endpoint_in: EndpointUpdate) -> EndpointDefinition:
-    data = endpoint_in.dict(exclude_unset=True)
+    data = endpoint_in.model_dump(exclude_unset=True)
     for key, value in data.items():
         setattr(endpoint, key, value)
-    endpoint.updated_at = datetime.utcnow()
+    endpoint.updated_at = utc_now()
     session.add(endpoint)
     session.commit()
     session.refresh(endpoint)

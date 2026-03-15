@@ -271,26 +271,9 @@ const activeTitle = computed(() => {
 </script>
 
 <template>
-  <v-row class="workspace-grid">
-    <v-col cols="12" xl="3" lg="4">
-      <div class="d-flex flex-column ga-4">
-        <v-card class="workspace-card">
-          <v-card-item>
-            <template #prepend>
-              <v-avatar color="accent" variant="tonal">
-                <v-icon icon="mdi-waveform" />
-              </v-avatar>
-            </template>
-
-            <v-card-title>Workspace ready</v-card-title>
-            <v-card-subtitle>The backend database is still the source of truth for runtime and OpenAPI.</v-card-subtitle>
-          </v-card-item>
-          <v-card-text class="text-body-2 text-medium-emphasis">
-            Signed in as <strong>{{ auth.username.value }}</strong>. Use this surface for endpoint settings, then jump
-            into the dedicated schema editor when you need full builder focus.
-          </v-card-text>
-        </v-card>
-
+  <v-row class="workspace-grid endpoint-workspace-grid">
+    <v-col class="endpoint-sidebar-col" cols="12" xl="3" lg="4">
+      <div class="endpoint-sidebar">
         <EndpointCatalog
           :active-endpoint-id="selectedEndpoint?.id"
           :endpoints="endpoints"
@@ -304,8 +287,8 @@ const activeTitle = computed(() => {
       </div>
     </v-col>
 
-    <v-col cols="12" xl="9" lg="8">
-      <div class="d-flex flex-column ga-4">
+    <v-col class="endpoint-detail-col" cols="12" xl="9" lg="8">
+      <div class="endpoint-detail-shell">
         <v-alert v-if="pageSuccess" border="start" color="success" variant="tonal">
           {{ pageSuccess }}
         </v-alert>
@@ -318,96 +301,141 @@ const activeTitle = computed(() => {
           {{ duplicateBanner }}
         </v-alert>
 
-        <v-skeleton-loader
-          v-if="isInitialCatalogLoad"
-          class="workspace-card"
-          type="heading, paragraph, paragraph, paragraph, table-heading, table-row-divider, table-row-divider"
-        />
+        <div class="endpoint-detail-scroll">
+          <v-skeleton-loader
+            v-if="isInitialCatalogLoad"
+            class="workspace-card"
+            type="heading, paragraph, paragraph, paragraph, table-heading, table-row-divider, table-row-divider"
+          />
 
-        <v-card v-else-if="props.mode === 'browse'" class="workspace-card browse-card">
-          <v-card-text class="pa-8">
-            <div class="text-overline text-secondary">Endpoint studio</div>
-            <div class="text-h3 font-weight-bold mt-2">Pick a route from the catalog or start a new one.</div>
-            <div class="text-body-1 text-medium-emphasis mt-4">
-              Settings stay here. Schema design now gets its own full-page workspace so the builder is no longer
-              competing with general form controls.
-            </div>
-            <div class="d-flex flex-wrap ga-3 mt-6">
-              <v-btn color="primary" prepend-icon="mdi-plus" @click="router.push({ name: 'endpoints-create' })">
-                Create endpoint
-              </v-btn>
-              <v-btn prepend-icon="mdi-refresh" variant="text" @click="fetchEndpoints">
-                Refresh catalog
-              </v-btn>
-            </div>
-          </v-card-text>
-        </v-card>
+          <v-card v-else-if="props.mode === 'browse'" class="workspace-card browse-card">
+            <v-card-text class="pa-8">
+              <div class="text-overline text-secondary">Endpoint studio</div>
+              <div class="text-h3 font-weight-bold mt-2">Pick a route from the catalog or start a new one.</div>
+              <div class="text-body-1 text-medium-emphasis mt-4">
+                Settings stay here. Schema design now gets its own full-page workspace so the builder is no longer
+                competing with general form controls.
+              </div>
+              <div class="d-flex flex-wrap ga-3 mt-6">
+                <v-btn color="primary" prepend-icon="mdi-plus" @click="router.push({ name: 'endpoints-create' })">
+                  Create endpoint
+                </v-btn>
+                <v-btn prepend-icon="mdi-refresh" variant="text" @click="fetchEndpoints">
+                  Refresh catalog
+                </v-btn>
+              </div>
+            </v-card-text>
+          </v-card>
 
-        <v-card
-          v-else-if="props.mode === 'edit' && !selectedEndpoint"
-          class="workspace-card browse-card"
-        >
-          <v-card-text class="pa-8">
-            <div class="text-overline text-error">Missing endpoint</div>
-            <div class="text-h4 font-weight-bold mt-2">That route is no longer in the catalog.</div>
-            <div class="text-body-1 text-medium-emphasis mt-4">
-              Refresh the list, pick another record, or create a fresh endpoint shell.
-            </div>
-          </v-card-text>
-        </v-card>
+          <v-card
+            v-else-if="props.mode === 'edit' && !selectedEndpoint"
+            class="workspace-card browse-card"
+          >
+            <v-card-text class="pa-8">
+              <div class="text-overline text-error">Missing endpoint</div>
+              <div class="text-h4 font-weight-bold mt-2">That route is no longer in the catalog.</div>
+              <div class="text-body-1 text-medium-emphasis mt-4">
+                Refresh the list, pick another record, or create a fresh endpoint shell.
+              </div>
+            </v-card-text>
+          </v-card>
 
-        <template v-else>
-          <v-slide-y-transition mode="out-in">
-            <div :key="recordTransitionKey" class="d-flex flex-column ga-4">
-              <v-card class="workspace-card record-hero">
-                <v-card-text class="d-flex flex-column flex-md-row justify-space-between ga-4">
-                  <div>
-                    <div class="text-overline text-secondary">
-                      {{ props.mode === "create" ? "New route shell" : "Active record" }}
+          <template v-else>
+            <v-slide-y-transition mode="out-in">
+              <div :key="recordTransitionKey" class="d-flex flex-column ga-4">
+                <v-card class="workspace-card record-hero">
+                  <v-card-text class="d-flex flex-column flex-md-row justify-space-between ga-4">
+                    <div>
+                      <div class="text-overline text-secondary">
+                        {{ props.mode === "create" ? "New route shell" : "Active record" }}
+                      </div>
+                      <div class="text-h4 font-weight-bold mt-2">{{ activeTitle }}</div>
+                      <div class="text-body-1 text-medium-emphasis mt-3">
+                        {{
+                          props.mode === "create"
+                            ? "Start with identity and behavior. Once the endpoint exists, the schema studio opens on its own page."
+                            : selectedEndpoint?.path
+                        }}
+                      </div>
                     </div>
-                    <div class="text-h4 font-weight-bold mt-2">{{ activeTitle }}</div>
-                    <div class="text-body-1 text-medium-emphasis mt-3">
-                      {{
-                        props.mode === "create"
-                          ? "Start with identity and behavior. Once the endpoint exists, the schema studio opens on its own page."
-                          : selectedEndpoint?.path
-                      }}
+
+                    <div class="d-flex flex-wrap align-start justify-end ga-2">
+                      <v-chip v-if="selectedEndpoint" color="primary" label variant="tonal">
+                        {{ selectedEndpoint.method }}
+                      </v-chip>
+                      <v-chip v-if="selectedEndpoint" :color="selectedEndpoint.enabled ? 'accent' : 'surface-variant'" label variant="tonal">
+                        {{ selectedEndpoint.enabled ? "Live" : "Disabled" }}
+                      </v-chip>
+                      <v-chip v-if="selectedEndpoint?.category" color="secondary" label variant="tonal">
+                        {{ selectedEndpoint.category }}
+                      </v-chip>
                     </div>
-                  </div>
+                  </v-card-text>
+                </v-card>
 
-                  <div class="d-flex flex-wrap align-start justify-end ga-2">
-                    <v-chip v-if="selectedEndpoint" color="primary" label variant="tonal">
-                      {{ selectedEndpoint.method }}
-                    </v-chip>
-                    <v-chip v-if="selectedEndpoint" :color="selectedEndpoint.enabled ? 'accent' : 'surface-variant'" label variant="tonal">
-                      {{ selectedEndpoint.enabled ? "Live" : "Disabled" }}
-                    </v-chip>
-                    <v-chip v-if="selectedEndpoint?.category" color="secondary" label variant="tonal">
-                      {{ selectedEndpoint.category }}
-                    </v-chip>
-                  </div>
-                </v-card-text>
-              </v-card>
-
-              <EndpointSettingsForm
-                :created-at="selectedEndpoint?.created_at"
-                :draft="draft"
-                :endpoint-id="selectedEndpoint?.id"
-                :errors="fieldErrors"
-                :is-creating="props.mode === 'create'"
-                :is-saving="isSaving"
-                :updated-at="selectedEndpoint?.updated_at"
-                @change="applyDraftPatch"
-                @delete="handleDelete"
-                @duplicate="duplicateSelectedEndpoint"
-                @open-schema="openSchemaStudio"
-                @preview="openPreview"
-                @submit="handleSave"
-              />
-            </div>
-          </v-slide-y-transition>
-        </template>
+                <EndpointSettingsForm
+                  :created-at="selectedEndpoint?.created_at"
+                  :draft="draft"
+                  :endpoint-id="selectedEndpoint?.id"
+                  :errors="fieldErrors"
+                  :is-creating="props.mode === 'create'"
+                  :is-saving="isSaving"
+                  :updated-at="selectedEndpoint?.updated_at"
+                  @change="applyDraftPatch"
+                  @delete="handleDelete"
+                  @duplicate="duplicateSelectedEndpoint"
+                  @open-schema="openSchemaStudio"
+                  @preview="openPreview"
+                  @submit="handleSave"
+                />
+              </div>
+            </v-slide-y-transition>
+          </template>
+        </div>
       </div>
     </v-col>
   </v-row>
 </template>
+
+<style scoped>
+.endpoint-sidebar,
+.endpoint-detail-shell {
+  width: 100%;
+}
+
+.endpoint-detail-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.endpoint-detail-scroll {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+}
+
+@media (min-width: 1280px) {
+  .endpoint-workspace-grid {
+    min-height: calc(100vh - var(--v-layout-top, 88px) - 3rem);
+  }
+
+  .endpoint-detail-col {
+    display: flex;
+  }
+
+  .endpoint-sidebar-col {
+    display: flex;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+  }
+
+  .endpoint-sidebar {
+    height: calc(100vh - var(--v-layout-top, 88px) - 3rem);
+    max-height: calc(100vh - var(--v-layout-top, 88px) - 3rem);
+  }
+}
+</style>

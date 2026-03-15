@@ -66,3 +66,7 @@ This file tracks the work needed to bootstrap and evolve the project.
 - [x] Simplify the admin sign-in page with friendlier copy and a single-column intro/form flow
 - [x] Stabilize GitHub Actions CI and add multi-arch image publishing for CI/CD
 - [x] Add a standalone GHCR-backed Docker Compose example for image-only deployments
+- [x] Audit and refresh repo runtimes, dependencies, Docker bases, and GitHub Actions versions; add README workflow badges
+- [x] Remove admin-web `npm ci` deprecation warnings by migrating the lint stack to flat config and overriding the test-only `glob` path
+- [x] Remove the admin workspace intro card, move desktop scrolling below the top bar, and tighten the admin left-rail behavior
+- [x] Redesign the endpoint catalog cards into a denser, more scannable layout and normalize schema-studio shell scrolling

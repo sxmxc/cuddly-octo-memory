@@ -8,8 +8,9 @@
 
 ## CI workflow
 
-- Backend job: Python 3.11, installs `requirements.txt` and `requirements-dev.txt`, then runs `pytest`.
-- Frontend job: Node 22, runs `npm ci`, `npm run lint`, `npm run test`, and `npm run build`.
+- The workflows opt into `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` so JavaScript actions are exercised on the Node 24 runtime before GitHub makes that the default runner behavior.
+- Backend job: Python 3.12 via `actions/setup-python@v6`, installs `requirements.txt` and `requirements-dev.txt`, then runs `pytest`.
+- Frontend job: Node 24 via `actions/setup-node@v6`, runs `npm ci`, `npm run lint`, `npm run test`, and `npm run build`.
 - Docker smoke job: copies `.env.example` to `.env`, runs `docker compose up -d --build`, waits for the API and admin UI to answer, then tears the stack down.
 
 ## Image workflow
@@ -54,6 +55,13 @@ Each image run uploads a metadata artifact containing:
 - published manifest JSON when the image was pushed
 
 Pushed images also emit provenance/SBOM data through the image workflow.
+
+## Dependency posture
+
+- Backend audits are expected to stay clean under `pip-audit -r requirements.txt -r requirements-dev.txt`.
+- Frontend audits are expected to stay clean under `npm audit`.
+- The admin frontend now uses ESLint flat config, so `npm ci` should no longer emit the old deprecated-package warnings from the ESLint 8 toolchain.
+- `npm outdated` still reports a newer `vue-router` major; that remains a conscious follow-up rather than part of the dependency/security refresh.
 
 ## Runtime environment notes
 

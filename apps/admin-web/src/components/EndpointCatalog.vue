@@ -169,7 +169,7 @@ watch(
           No endpoints match the current filters.
         </v-alert>
 
-        <v-list v-else class="catalog-list" lines="three" rounded="xl">
+        <v-list v-else class="catalog-list" rounded="xl">
           <v-list-item
             v-for="endpoint in paginatedEndpoints"
             :key="endpoint.id"
@@ -178,31 +178,42 @@ watch(
             rounded="xl"
             @click="emit('select', endpoint.id)"
           >
-            <template #prepend>
-              <v-avatar :color="endpoint.enabled ? 'accent' : 'surface-variant'" size="44" variant="tonal">
-                <span class="text-caption font-weight-bold">{{ endpoint.method }}</span>
-              </v-avatar>
-            </template>
+            <div class="catalog-item-shell">
+              <span class="catalog-method-badge">{{ endpoint.method }}</span>
 
-            <v-list-item-title class="font-weight-bold">{{ endpoint.name }}</v-list-item-title>
-            <v-list-item-subtitle>{{ endpoint.path }}</v-list-item-subtitle>
+              <div class="catalog-item-main">
+                <div class="catalog-item-title">{{ endpoint.name }}</div>
 
-            <template #append>
-              <div class="d-flex flex-column align-end ga-2">
-                <v-chip :color="endpoint.enabled ? 'accent' : 'surface-variant'" label size="small" variant="tonal">
+                <div class="catalog-item-subline">
+                  <span class="catalog-item-path">{{ endpoint.path }}</span>
+                  <span class="catalog-item-divider" aria-hidden="true">&bull;</span>
+                  <span class="catalog-item-category">{{ endpoint.category || "uncategorized" }}</span>
+                </div>
+              </div>
+
+              <div class="catalog-item-actions">
+                <v-chip
+                  class="catalog-status-chip"
+                  :color="endpoint.enabled ? 'accent' : 'surface-variant'"
+                  density="compact"
+                  label
+                  size="small"
+                  variant="tonal"
+                >
                   {{ endpoint.enabled ? "Live" : "Disabled" }}
                 </v-chip>
                 <v-btn
+                  class="catalog-duplicate-btn"
                   aria-label="Duplicate endpoint"
+                  color="surface-variant"
                   density="comfortable"
                   icon="mdi-content-copy"
                   size="small"
-                  variant="text"
+                  variant="tonal"
                   @click.stop="emit('duplicate', endpoint.id)"
                 />
-                <span class="text-caption text-medium-emphasis">{{ endpoint.category || "uncategorized" }}</span>
               </div>
-            </template>
+            </div>
           </v-list-item>
         </v-list>
       </div>
@@ -224,6 +235,7 @@ watch(
 .catalog-card {
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .catalog-card-body {
@@ -232,12 +244,143 @@ watch(
 }
 
 .catalog-scroll-region {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.catalog-item {
+  margin-bottom: 0.35rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: color-mix(in srgb, rgb(var(--v-theme-surface)) 95%, rgb(var(--v-theme-background)) 5%);
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.catalog-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(198, 123, 66, 0.28);
+}
+
+.catalog-item.v-list-item--active {
+  border-color: rgba(36, 90, 125, 0.42);
+  background: color-mix(in srgb, rgb(var(--v-theme-surface)) 84%, rgb(var(--v-theme-primary)) 16%);
+  box-shadow: 0 0 0 1px rgba(36, 90, 125, 0.16);
+}
+
+.catalog-item-shell {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  padding: 0.2rem 0;
+}
+
+.catalog-item-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.24rem;
+}
+
+.catalog-method-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+  height: 1.8rem;
+  padding: 0 0.65rem;
+  border: 1px solid rgba(86, 163, 255, 0.28);
+  border-radius: 999px;
+  background: color-mix(in srgb, rgb(var(--v-theme-primary)) 16%, rgb(var(--v-theme-surface)) 84%);
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.catalog-item-title {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-item-subline {
+  display: flex;
+  align-items: center;
+  gap: 0.32rem;
+  min-width: 0;
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 0.78rem;
+  line-height: 1.15;
+}
+
+.catalog-item-path,
+.catalog-item-category {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-item-path {
+  min-width: 0;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+.catalog-item-category {
+  flex-shrink: 0;
+  max-width: 7rem;
+  color: rgba(148, 163, 184, 0.88);
+}
+
+.catalog-item-divider {
+  color: rgba(100, 116, 139, 0.8);
+  flex-shrink: 0;
+}
+
+.catalog-item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  min-width: max-content;
+}
+
+.catalog-status-chip {
+  font-size: 0.7rem;
+  letter-spacing: 0.01em;
+  font-weight: 600;
+}
+
+.catalog-duplicate-btn {
+  flex-shrink: 0;
+}
+
+.catalog-item :deep(.v-list-item__content) {
+  overflow: visible;
+}
+
+.catalog-item :deep(.v-list-item__overlay) {
+  opacity: 0;
 }
 
 @media (min-width: 1280px) {
   .catalog-card {
-    height: clamp(32rem, 68vh, 46rem);
+    height: 100%;
   }
 
   .catalog-scroll-region {

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from typing import Any, Iterable
 
 from app.services.mock_generation import preview_from_schema
 from app.services.schema_contract import sanitize_public_schema
+from app.time_utils import utc_now
 
 
 PRODUCT_NAME = "Mockingbird"
@@ -76,6 +76,6 @@ def build_public_reference(endpoints: Iterable[Any]) -> dict[str, Any]:
         "product_name": PRODUCT_NAME,
         "description": PRODUCT_DESCRIPTION,
         "endpoint_count": len(live_endpoints),
-        "refreshed_at": datetime.utcnow(),
+        "refreshed_at": utc_now(),
         "endpoints": live_endpoints,
     }

@@ -2,8 +2,8 @@
 
 ## Prerequisites
 - Docker Desktop (or equivalent Docker engine)
-- Node.js 22+ (for local frontend development; `@vuetify/v0` requires Node 22)
-- Python 3.11+ (optional for running backend locally without Docker)
+- Node.js 24+ for local frontend work
+- Python 3.12+ (optional for running backend locally without Docker)
 
 ## Quickstart
 
@@ -28,6 +28,7 @@ make up
 ## Bootstrap notes
 
 - `make up` is safe to run from a bind-mounted checkout even if `start.sh` does not have the executable bit set on the host.
+- The repo root includes `.node-version` and `.python-version` files so `nvm`, `mise`, `asdf`, or similar tooling can match the supported local runtimes quickly.
 - Local Compose explicitly builds the Dockerfiles' `dev` targets so the API keeps `uvicorn --reload` and the admin app keeps the Vite dev server for fast iteration.
 - API startup now runs `alembic upgrade head` before launching Uvicorn, so schema changes and legacy contract migrations are applied automatically.
 - The frontend keeps `node_modules` in a Docker volume so the bind-mounted source tree does not hide Vite and other installed dependencies.

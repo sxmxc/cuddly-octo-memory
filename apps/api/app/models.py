@@ -4,8 +4,11 @@ from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
 
+from pydantic import ConfigDict
 from sqlalchemy import Column, JSON as SAJSON
 from sqlmodel import Field, SQLModel
+
+from app.time_utils import utc_now
 
 
 class AuthMode(str, Enum):
@@ -34,8 +37,7 @@ class EndpointDefinition(SQLModel, table=True):
     latency_min_ms: int = 0
     latency_max_ms: int = 0
     seed_key: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)

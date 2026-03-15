@@ -57,7 +57,7 @@ def read_endpoint(endpoint_id: int, session: Session = Depends(get_session), _: 
 
 @router.post("/endpoints", response_model=EndpointRead, status_code=status.HTTP_201_CREATED)
 def create_new_endpoint(endpoint_in: EndpointCreate, session: Session = Depends(get_session), _: None = Depends(require_admin)):
-    payload = endpoint_in.copy(
+    payload = endpoint_in.model_copy(
         update={
             "request_schema": _normalize_request_schema(endpoint_in.request_schema),
             "response_schema": _normalize_response_schema(endpoint_in.response_schema),
@@ -76,7 +76,7 @@ def update_existing_endpoint(
     endpoint = get_endpoint(session, endpoint_id)
     if not endpoint:
         raise HTTPException(status_code=404, detail="Endpoint not found")
-    updates = endpoint_in.dict(exclude_unset=True)
+    updates = endpoint_in.model_dump(exclude_unset=True)
     if "request_schema" in updates:
         updates["request_schema"] = _normalize_request_schema(endpoint_in.request_schema)
     if "response_schema" in updates:
