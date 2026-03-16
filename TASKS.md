@@ -4,11 +4,11 @@ This file tracks the work needed to bootstrap and evolve the project.
 
 ## Now
 - [ ] Add background refresh or smarter cache invalidation for the admin catalog
+- [ ] Expand the request builder beyond JSON bodies to path/query parameter modeling
+- [ ] Reduce or eliminate Vuetify/jsdom CSS parse noise during frontend tests
 
 ## Next
-- [ ] Expand the request builder beyond JSON bodies to path/query parameter modeling
 - [ ] Add richer simulation UX around latency/error scenarios
-- [ ] Reduce or eliminate Vuetify/jsdom CSS parse noise during frontend tests
 - [ ] Refine the public landing page quick reference with richer try-it tooling or grouped filtering if the catalog grows
 
 ## Later
