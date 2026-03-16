@@ -84,6 +84,12 @@ function createObjectSchema(propertyName = "quote") {
   };
 }
 
+function findSchemaNodeByLabel(label: string): HTMLElement | null {
+  return Array.from(document.querySelectorAll<HTMLElement>("[data-node-id]")).find(
+    (element) => element.querySelector(".schema-node-pill-label")?.textContent?.trim() === label,
+  ) ?? null;
+}
+
 describe("SchemaEditorWorkspace", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -157,8 +163,8 @@ describe("SchemaEditorWorkspace", () => {
       scope: "request",
     });
 
-    const idNode = screen.getByText("id").closest("[data-node-id]");
-    const valueNode = screen.getByText("value").closest("[data-node-id]");
+    const idNode = findSchemaNodeByLabel("id");
+    const valueNode = findSchemaNodeByLabel("value");
 
     expect(idNode).not.toBeNull();
     expect(valueNode).not.toBeNull();
@@ -238,7 +244,7 @@ describe("SchemaEditorWorkspace", () => {
       scope: "response",
     });
 
-    const idNode = screen.getByText("id").closest("[data-node-id]");
+    const idNode = findSchemaNodeByLabel("id");
     expect(idNode).not.toBeNull();
 
     const valueSlot = document.querySelector(
@@ -291,7 +297,7 @@ describe("SchemaEditorWorkspace", () => {
       scope: "response",
     });
 
-    const deviceIdNode = screen.getByText("deviceId").closest("[data-node-id]");
+    const deviceIdNode = findSchemaNodeByLabel("deviceId");
     expect(deviceIdNode).not.toBeNull();
 
     const valueSlot = document.querySelector(
@@ -343,7 +349,7 @@ describe("SchemaEditorWorkspace", () => {
       scope: "response",
     });
 
-    const quoteNode = screen.getByText("quote").closest("[data-node-id]");
+    const quoteNode = findSchemaNodeByLabel("quote");
     expect(quoteNode).not.toBeNull();
 
     const valueSlot = document.querySelector(
