@@ -7,6 +7,9 @@ import type {
   AdminUserUpdatePayload,
   ChangePasswordPayload,
   Endpoint,
+  EndpointBundle,
+  EndpointImportRequestPayload,
+  EndpointImportResponse,
   EndpointPayload,
   JsonObject,
   PreviewResponsePayload,
@@ -231,6 +234,20 @@ export function listEndpoints(session: AdminSession): Promise<Endpoint[]> {
 
 export function getEndpoint(endpointId: number, session: AdminSession): Promise<Endpoint> {
   return request<Endpoint>(`/api/admin/endpoints/${endpointId}`, session);
+}
+
+export function exportEndpointBundle(session: AdminSession): Promise<EndpointBundle> {
+  return request<EndpointBundle>("/api/admin/endpoints/export", session);
+}
+
+export function importEndpointBundle(
+  payload: EndpointImportRequestPayload,
+  session: AdminSession,
+): Promise<EndpointImportResponse> {
+  return request<EndpointImportResponse>("/api/admin/endpoints/import", session, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function createEndpoint(payload: EndpointPayload, session: AdminSession): Promise<Endpoint> {

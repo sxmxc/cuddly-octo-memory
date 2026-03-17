@@ -10,6 +10,8 @@ DEFAULT_ROOT_SCHEMA: dict[str, Any] = {
     "required": [],
     "x-builder": {"order": []},
 }
+REQUEST_PARAMETERS_KEY = "x-request"
+REQUEST_PARAMETER_LOCATIONS = ("path", "query")
 MOCK_VALUE_TYPE_ALIASES = {
     "uuid": "id",
     "guid": "id",
@@ -58,6 +60,10 @@ def default_request_root() -> dict[str, Any]:
     return deepcopy(DEFAULT_ROOT_SCHEMA)
 
 
+def default_request_parameter_root() -> dict[str, Any]:
+    return deepcopy(DEFAULT_ROOT_SCHEMA)
+
+
 def sanitize_public_schema(schema: Any) -> Any:
     if isinstance(schema, list):
         return [sanitize_public_schema(item) for item in schema]
@@ -67,10 +73,139 @@ def sanitize_public_schema(schema: Any) -> Any:
 
     sanitized: dict[str, Any] = {}
     for key, value in schema.items():
-        if key in {"x-mock", "x-builder"}:
+        if key in {"x-mock", "x-builder", REQUEST_PARAMETERS_KEY}:
             continue
         sanitized[key] = sanitize_public_schema(value)
     return sanitized
+
+
+def request_path_parameter_names(path: str) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    cursor = 0
+
+    while True:
+        start = path.find("{", cursor)
+        if start == -1:
+            return names
+
+        end = path.find("}", start + 1)
+        if end == -1:
+            return names
+
+        name = path[start + 1:end].strip()
+        cursor = end + 1
+        if not name or name in seen:
+            continue
+
+        seen.add(name)
+        names.append(name)
+
+
+def _normalize_parameter_property_schema(schema: Any, *, property_name: str) -> dict[str, Any]:
+    normalized = normalize_schema_for_builder(schema or {"type": "string"}, property_name=property_name, include_mock=False)
+    if normalized.get("type") in {"object", "array"} or "properties" in normalized or "items" in normalized:
+        return normalize_schema_for_builder({"type": "string"}, property_name=property_name, include_mock=False)
+    return normalized
+
+
+def normalize_request_parameter_schema(schema: Any) -> dict[str, Any]:
+    if not isinstance(schema, dict) or not schema:
+        return default_request_parameter_root()
+
+    normalized = normalize_schema_for_builder(schema, property_name="root", include_mock=False)
+    if normalized.get("type") != "object":
+        return default_request_parameter_root()
+
+    properties = normalized.get("properties", {}) or {}
+    required = [value for value in normalized.get("required", []) if value in properties]
+    order = [value for value in normalized.get("x-builder", {}).get("order", []) if value in properties]
+
+    for key in properties:
+        if key not in order:
+            order.append(key)
+
+    normalized["properties"] = {
+        key: _normalize_parameter_property_schema(properties[key], property_name=key)
+        for key in order
+    }
+    normalized["required"] = required
+    normalized["x-builder"] = {"order": order}
+    return normalized
+
+
+def sync_request_path_parameter_schema(path: str, schema: Any) -> dict[str, Any]:
+    parameter_names = request_path_parameter_names(path)
+    normalized = normalize_request_parameter_schema(schema)
+    properties = normalized.get("properties", {}) or {}
+
+    normalized["type"] = "object"
+    normalized["properties"] = {
+        name: _normalize_parameter_property_schema(properties.get(name), property_name=name)
+        for name in parameter_names
+    }
+    normalized["required"] = list(parameter_names)
+    normalized["x-builder"] = {"order": list(parameter_names)}
+    return normalized
+
+
+def extract_request_parameter_schemas(schema: Any) -> dict[str, dict[str, Any]]:
+    raw_extension = schema.get(REQUEST_PARAMETERS_KEY) if isinstance(schema, dict) else {}
+    extension = raw_extension if isinstance(raw_extension, dict) else {}
+    return {
+        location: normalize_request_parameter_schema(extension.get(location))
+        for location in REQUEST_PARAMETER_LOCATIONS
+    }
+
+
+def extract_request_body_schema(schema: Any) -> dict[str, Any]:
+    if not isinstance(schema, dict) or not schema:
+        return default_request_root()
+
+    body_schema = deepcopy(schema)
+    body_schema.pop(REQUEST_PARAMETERS_KEY, None)
+    if not body_schema:
+        return default_request_root()
+
+    return normalize_schema_for_builder(body_schema, property_name="root", include_mock=False)
+
+
+def _has_request_parameter_fields(schema: dict[str, Any]) -> bool:
+    return bool(schema.get("properties"))
+
+
+def build_request_schema_contract(
+    schema: Any,
+    *,
+    path_schema: Any | None = None,
+    query_schema: Any | None = None,
+) -> dict[str, Any]:
+    body_schema = extract_request_body_schema(schema)
+    existing_parameters = extract_request_parameter_schemas(schema)
+    normalized_path = normalize_request_parameter_schema(existing_parameters["path"] if path_schema is None else path_schema)
+    normalized_query = normalize_request_parameter_schema(existing_parameters["query"] if query_schema is None else query_schema)
+
+    parameters: dict[str, Any] = {}
+    if _has_request_parameter_fields(normalized_path):
+        parameters["path"] = normalized_path
+    if _has_request_parameter_fields(normalized_query):
+        parameters["query"] = normalized_query
+
+    if parameters:
+        body_schema[REQUEST_PARAMETERS_KEY] = parameters
+
+    return body_schema
+
+
+def normalize_request_schema_contract(schema: Any, *, path: str | None = None) -> dict[str, Any]:
+    parameters = extract_request_parameter_schemas(schema)
+    if path is not None:
+        parameters["path"] = sync_request_path_parameter_schema(path, parameters["path"])
+    return build_request_schema_contract(
+        schema,
+        path_schema=parameters["path"],
+        query_schema=parameters["query"],
+    )
 
 
 def infer_schema_from_value(value: Any) -> dict[str, Any]:

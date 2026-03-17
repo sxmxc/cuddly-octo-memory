@@ -895,6 +895,668 @@ def test_openapi_strips_internal_extensions_and_emits_request_body(seeded_db):
     assert "x-mock" not in response_schema["properties"]["id"]
 
 
+def test_admin_can_export_endpoint_bundle(empty_db):
+    client = TestClient(app)
+    headers = _login_headers(client)
+
+    create_response = client.post(
+        "/api/admin/endpoints",
+        json={
+            "name": "List accounts",
+            "method": "GET",
+            "path": "/api/accounts/{accountId}",
+            "category": "accounts",
+            "tags": ["accounts"],
+            "summary": "List accounts",
+            "description": "Exports in the native bundle format.",
+            "enabled": True,
+            "auth_mode": "none",
+            "request_schema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "x-builder": {"order": []},
+                "x-request": {
+                    "path": {
+                        "type": "object",
+                        "properties": {
+                            "accountId": {
+                                "type": "string",
+                                "format": "uuid",
+                            }
+                        },
+                        "required": ["accountId"],
+                        "x-builder": {"order": ["accountId"]},
+                    }
+                },
+            },
+            "response_schema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "x-mock": {"mode": "generate", "type": "id", "options": {}},
+                    }
+                },
+                "required": ["id"],
+                "x-builder": {"order": ["id"]},
+                "x-mock": {"mode": "generate"},
+            },
+            "success_status_code": 200,
+            "error_rate": 0.0,
+            "latency_min_ms": 0,
+            "latency_max_ms": 0,
+            "seed_key": "accounts-export",
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+
+    export_response = client.get("/api/admin/endpoints/export", headers=headers)
+    assert export_response.status_code == 200
+
+    bundle = export_response.json()
+    assert bundle["schema_version"] == 1
+    assert bundle["product"] == "Mockingbird"
+    assert len(bundle["endpoints"]) == 1
+
+    exported_endpoint = bundle["endpoints"][0]
+    assert exported_endpoint["name"] == "List accounts"
+    assert exported_endpoint["slug"] == "list-accounts"
+    assert exported_endpoint["method"] == "GET"
+    assert exported_endpoint["path"] == "/api/accounts/{accountId}"
+    assert exported_endpoint["category"] == "accounts"
+    assert exported_endpoint["tags"] == ["accounts"]
+    assert exported_endpoint["summary"] == "List accounts"
+    assert exported_endpoint["description"] == "Exports in the native bundle format."
+    assert exported_endpoint["enabled"] is True
+    assert exported_endpoint["auth_mode"] == "none"
+    assert exported_endpoint["success_status_code"] == 200
+    assert exported_endpoint["error_rate"] == 0.0
+    assert exported_endpoint["latency_min_ms"] == 0
+    assert exported_endpoint["latency_max_ms"] == 0
+    assert exported_endpoint["seed_key"] == "accounts-export"
+    assert exported_endpoint["request_schema"] == {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "x-builder": {"order": []},
+        "x-request": {
+            "path": {
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "string",
+                        "format": "uuid",
+                    }
+                },
+                "required": ["accountId"],
+                "x-builder": {"order": ["accountId"]},
+            }
+        },
+    }
+    assert exported_endpoint["response_schema"]["type"] == "object"
+    assert exported_endpoint["response_schema"]["required"] == ["id"]
+    assert exported_endpoint["response_schema"]["x-builder"] == {"order": ["id"]}
+    assert exported_endpoint["response_schema"]["x-mock"]["mode"] == "generate"
+    assert exported_endpoint["response_schema"]["properties"]["id"] == {
+        "type": "string",
+        "format": "uuid",
+        "x-mock": {"mode": "generate", "type": "id", "generator": "id", "options": {}},
+    }
+
+
+def test_admin_endpoint_import_supports_upsert_dry_run_and_apply(empty_db):
+    client = TestClient(app)
+    headers = _login_headers(client)
+
+    existing_response = client.post(
+        "/api/admin/endpoints",
+        json={
+            "name": "List accounts",
+            "method": "GET",
+            "path": "/api/accounts/{accountId}",
+            "category": "accounts",
+            "tags": ["accounts"],
+            "summary": "Original summary",
+            "description": "Original description",
+            "enabled": True,
+            "auth_mode": "none",
+            "request_schema": {},
+            "response_schema": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "x-mock": {"mode": "fixed", "value": "original", "options": {}},
+                    }
+                },
+                "required": ["status"],
+                "x-builder": {"order": ["status"]},
+                "x-mock": {"mode": "generate"},
+            },
+            "success_status_code": 200,
+            "error_rate": 0.0,
+            "latency_min_ms": 0,
+            "latency_max_ms": 0,
+            "seed_key": None,
+        },
+        headers=headers,
+    )
+    assert existing_response.status_code == 201
+
+    bundle_payload = {
+        "bundle": {
+            "schema_version": 1,
+            "product": "Mockingbird",
+            "exported_at": "2026-03-17T00:00:00Z",
+            "endpoints": [
+                {
+                    "name": "List accounts imported",
+                    "slug": "list-accounts-imported",
+                    "method": "GET",
+                    "path": "/api/accounts/{accountId}",
+                    "category": "accounts",
+                    "tags": ["accounts", "imported"],
+                    "summary": "Updated from bundle",
+                    "description": "Updated by import",
+                    "enabled": True,
+                    "auth_mode": "none",
+                    "request_schema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                        "x-builder": {"order": []},
+                        "x-request": {
+                            "path": {
+                                "type": "object",
+                                "properties": {
+                                    "accountId": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                    }
+                                },
+                                "required": ["accountId"],
+                                "x-builder": {"order": ["accountId"]},
+                            }
+                        },
+                    },
+                    "response_schema": {
+                        "type": "object",
+                        "properties": {
+                            "status": {
+                                "type": "string",
+                                "x-mock": {"mode": "fixed", "value": "imported", "options": {}},
+                            }
+                        },
+                        "required": ["status"],
+                        "x-builder": {"order": ["status"]},
+                        "x-mock": {"mode": "generate"},
+                    },
+                    "success_status_code": 200,
+                    "error_rate": 0.0,
+                    "latency_min_ms": 0,
+                    "latency_max_ms": 0,
+                    "seed_key": "accounts-bundle",
+                },
+                {
+                    "name": "Create audit log",
+                    "slug": "create-audit-log",
+                    "method": "POST",
+                    "path": "/api/audit-logs",
+                    "category": "audit",
+                    "tags": ["audit"],
+                    "summary": "Create an audit log entry",
+                    "description": "Imported create route",
+                    "enabled": False,
+                    "auth_mode": "none",
+                    "request_schema": {
+                        "type": "object",
+                        "properties": {
+                            "message": {
+                                "type": "string",
+                                "minLength": 3,
+                            }
+                        },
+                        "required": ["message"],
+                        "x-builder": {"order": ["message"]},
+                    },
+                    "response_schema": {
+                        "type": "object",
+                        "properties": {
+                            "ok": {
+                                "type": "boolean",
+                                "x-mock": {"mode": "fixed", "value": True, "options": {}},
+                            }
+                        },
+                        "required": ["ok"],
+                        "x-builder": {"order": ["ok"]},
+                        "x-mock": {"mode": "generate"},
+                    },
+                    "success_status_code": 201,
+                    "error_rate": 0.0,
+                    "latency_min_ms": 10,
+                    "latency_max_ms": 25,
+                    "seed_key": None,
+                },
+            ],
+        },
+        "mode": "upsert",
+        "dry_run": True,
+        "confirm_replace_all": False,
+    }
+
+    dry_run_response = client.post("/api/admin/endpoints/import", json=bundle_payload, headers=headers)
+    assert dry_run_response.status_code == 200
+    assert dry_run_response.json() == {
+        "dry_run": True,
+        "applied": False,
+        "has_errors": False,
+        "mode": "upsert",
+        "summary": {
+            "endpoint_count": 2,
+            "create_count": 1,
+            "update_count": 1,
+            "delete_count": 0,
+            "skip_count": 0,
+            "error_count": 0,
+        },
+        "operations": [
+            {
+                "action": "update",
+                "name": "List accounts imported",
+                "method": "GET",
+                "path": "/api/accounts/{accountId}",
+                "detail": None,
+            },
+            {
+                "action": "create",
+                "name": "Create audit log",
+                "method": "POST",
+                "path": "/api/audit-logs",
+                "detail": None,
+            },
+        ],
+    }
+
+    list_after_dry_run = client.get("/api/admin/endpoints", headers=headers)
+    assert list_after_dry_run.status_code == 200
+    assert [endpoint["name"] for endpoint in list_after_dry_run.json()] == ["List accounts"]
+
+    apply_response = client.post(
+        "/api/admin/endpoints/import",
+        json={**bundle_payload, "dry_run": False},
+        headers=headers,
+    )
+    assert apply_response.status_code == 200
+    assert apply_response.json()["applied"] is True
+
+    list_after_import = client.get("/api/admin/endpoints", headers=headers)
+    assert list_after_import.status_code == 200
+    imported_endpoints = sorted(list_after_import.json(), key=lambda endpoint: (endpoint["path"], endpoint["method"]))
+    assert [endpoint["name"] for endpoint in imported_endpoints] == [
+        "List accounts imported",
+        "Create audit log",
+    ]
+    assert imported_endpoints[0]["request_schema"]["x-request"]["path"]["properties"]["accountId"]["format"] == "uuid"
+    assert imported_endpoints[0]["slug"] == "list-accounts-imported"
+    assert imported_endpoints[1]["success_status_code"] == 201
+    assert imported_endpoints[1]["enabled"] is False
+
+
+def test_admin_endpoint_import_replace_all_requires_confirmation_and_deletes_missing_routes(empty_db):
+    client = TestClient(app)
+    headers = _login_headers(client)
+
+    for name, path in (
+        ("List users", "/api/users"),
+        ("List invoices", "/api/invoices"),
+    ):
+        create_response = client.post(
+            "/api/admin/endpoints",
+            json={
+                "name": name,
+                "method": "GET",
+                "path": path,
+                "category": "testing",
+                "tags": [],
+                "summary": name,
+                "description": "",
+                "enabled": True,
+                "auth_mode": "none",
+                "request_schema": {},
+                "response_schema": {
+                    "type": "object",
+                    "properties": {
+                        "ok": {
+                            "type": "boolean",
+                            "x-mock": {"mode": "fixed", "value": True, "options": {}},
+                        }
+                    },
+                    "required": ["ok"],
+                    "x-builder": {"order": ["ok"]},
+                    "x-mock": {"mode": "generate"},
+                },
+                "success_status_code": 200,
+                "error_rate": 0.0,
+                "latency_min_ms": 0,
+                "latency_max_ms": 0,
+                "seed_key": None,
+            },
+            headers=headers,
+        )
+        assert create_response.status_code == 201
+
+    replace_bundle = {
+        "bundle": {
+            "schema_version": 1,
+            "product": "Mockingbird",
+            "exported_at": "2026-03-17T00:00:00Z",
+            "endpoints": [
+                {
+                    "name": "List devices",
+                    "slug": "list-devices",
+                    "method": "GET",
+                    "path": "/api/devices",
+                    "category": "devices",
+                    "tags": ["devices"],
+                    "summary": "List devices",
+                    "description": "Replace-all import",
+                    "enabled": True,
+                    "auth_mode": "none",
+                    "request_schema": {},
+                    "response_schema": {
+                        "type": "object",
+                        "properties": {
+                            "ok": {
+                                "type": "boolean",
+                                "x-mock": {"mode": "fixed", "value": True, "options": {}},
+                            }
+                        },
+                        "required": ["ok"],
+                        "x-builder": {"order": ["ok"]},
+                        "x-mock": {"mode": "generate"},
+                    },
+                    "success_status_code": 200,
+                    "error_rate": 0.0,
+                    "latency_min_ms": 0,
+                    "latency_max_ms": 0,
+                    "seed_key": None,
+                }
+            ],
+        },
+        "mode": "replace_all",
+        "dry_run": False,
+        "confirm_replace_all": False,
+    }
+
+    blocked_replace_response = client.post("/api/admin/endpoints/import", json=replace_bundle, headers=headers)
+    assert blocked_replace_response.status_code == 200
+    assert blocked_replace_response.json()["applied"] is False
+    assert blocked_replace_response.json()["has_errors"] is True
+    assert blocked_replace_response.json()["summary"]["delete_count"] == 2
+    assert blocked_replace_response.json()["summary"]["error_count"] == 1
+
+    unchanged_list = client.get("/api/admin/endpoints", headers=headers)
+    assert unchanged_list.status_code == 200
+    assert sorted(endpoint["path"] for endpoint in unchanged_list.json()) == ["/api/invoices", "/api/users"]
+
+    confirmed_replace_response = client.post(
+        "/api/admin/endpoints/import",
+        json={**replace_bundle, "confirm_replace_all": True},
+        headers=headers,
+    )
+    assert confirmed_replace_response.status_code == 200
+    assert confirmed_replace_response.json()["applied"] is True
+    assert confirmed_replace_response.json()["summary"] == {
+        "endpoint_count": 1,
+        "create_count": 1,
+        "update_count": 0,
+        "delete_count": 2,
+        "skip_count": 0,
+        "error_count": 0,
+    }
+
+    replaced_list = client.get("/api/admin/endpoints", headers=headers)
+    assert replaced_list.status_code == 200
+    assert len(replaced_list.json()) == 1
+    replaced_endpoint = replaced_list.json()[0]
+    assert replaced_endpoint["name"] == "List devices"
+    assert replaced_endpoint["slug"] == "list-devices"
+    assert replaced_endpoint["method"] == "GET"
+    assert replaced_endpoint["path"] == "/api/devices"
+    assert replaced_endpoint["category"] == "devices"
+    assert replaced_endpoint["tags"] == ["devices"]
+    assert replaced_endpoint["summary"] == "List devices"
+    assert replaced_endpoint["description"] == "Replace-all import"
+    assert replaced_endpoint["enabled"] is True
+    assert replaced_endpoint["auth_mode"] == "none"
+    assert replaced_endpoint["request_schema"] == {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "x-builder": {"order": []},
+    }
+    assert replaced_endpoint["response_schema"]["type"] == "object"
+    assert replaced_endpoint["response_schema"]["required"] == ["ok"]
+    assert replaced_endpoint["response_schema"]["x-builder"] == {"order": ["ok"]}
+    assert replaced_endpoint["response_schema"]["x-mock"]["mode"] == "generate"
+    assert replaced_endpoint["response_schema"]["properties"]["ok"] == {
+        "type": "boolean",
+        "x-mock": {"mode": "fixed", "value": True, "options": {}},
+    }
+    assert replaced_endpoint["success_status_code"] == 200
+    assert replaced_endpoint["error_rate"] == 0.0
+    assert replaced_endpoint["latency_min_ms"] == 0
+    assert replaced_endpoint["latency_max_ms"] == 0
+    assert replaced_endpoint["seed_key"] is None
+    assert replaced_endpoint["created_at"]
+    assert replaced_endpoint["updated_at"]
+
+
+def test_openapi_emits_request_parameters_from_request_contract(empty_db):
+    client = TestClient(app)
+    headers = _login_headers(client)
+
+    create_response = client.post(
+        "/api/admin/endpoints",
+        json={
+            "name": "Create item",
+            "method": "POST",
+            "path": "/api/items/{itemId}",
+            "category": "inventory",
+            "tags": ["inventory"],
+            "summary": "Create an inventory item",
+            "description": "Exercises body, path, and query request inputs.",
+            "enabled": True,
+            "auth_mode": "none",
+            "request_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 3,
+                    }
+                },
+                "required": ["name"],
+                "x-builder": {"order": ["name"]},
+                "x-request": {
+                    "path": {
+                        "type": "object",
+                        "properties": {
+                            "itemId": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "Numeric item identifier",
+                            }
+                        },
+                        "required": ["itemId"],
+                        "x-builder": {"order": ["itemId"]},
+                    },
+                    "query": {
+                        "type": "object",
+                        "properties": {
+                            "limit": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "Maximum result size",
+                            },
+                            "state": {
+                                "type": "string",
+                                "enum": ["active", "archived"],
+                                "description": "Optional status filter",
+                            },
+                        },
+                        "required": ["limit"],
+                        "x-builder": {"order": ["limit", "state"]},
+                    },
+                },
+            },
+            "response_schema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "x-mock": {"mode": "generate", "type": "id", "options": {}},
+                    }
+                },
+                "required": ["id"],
+                "x-builder": {"order": ["id"]},
+                "x-mock": {"mode": "generate"},
+            },
+            "success_status_code": 201,
+            "error_rate": 0.0,
+            "latency_min_ms": 0,
+            "latency_max_ms": 0,
+            "seed_key": None,
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+
+    openapi = client.get("/openapi.json").json()
+    operation = openapi["paths"]["/api/items/{itemId}"]["post"]
+
+    assert operation["parameters"] == [
+        {
+            "in": "path",
+            "name": "itemId",
+            "required": True,
+            "description": "Numeric item identifier",
+            "schema": {
+                "type": "integer",
+                "minimum": 1,
+            },
+        },
+        {
+            "in": "query",
+            "name": "limit",
+            "required": True,
+            "description": "Maximum result size",
+            "schema": {
+                "type": "integer",
+                "minimum": 1,
+            },
+        },
+        {
+            "in": "query",
+            "name": "state",
+            "required": False,
+            "description": "Optional status filter",
+            "schema": {
+                "type": "string",
+                "enum": ["active", "archived"],
+            },
+        },
+    ]
+
+    request_body_schema = operation["requestBody"]["content"]["application/json"]["schema"]
+    assert request_body_schema == {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "minLength": 3,
+            }
+        },
+        "required": ["name"],
+    }
+
+
+def test_updating_route_path_resyncs_request_path_parameter_contract(empty_db):
+    client = TestClient(app)
+    headers = _login_headers(client)
+
+    create_response = client.post(
+        "/api/admin/endpoints",
+        json={
+            "name": "Inspect device",
+            "method": "GET",
+            "path": "/api/devices/{deviceId}",
+            "category": "devices",
+            "tags": ["devices"],
+            "summary": "Inspect a device",
+            "description": "Checks path parameter normalization.",
+            "enabled": True,
+            "auth_mode": "none",
+            "request_schema": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "x-builder": {"order": []},
+                "x-request": {
+                    "path": {
+                        "type": "object",
+                        "properties": {
+                            "deviceId": {
+                                "type": "integer",
+                                "minimum": 1,
+                            }
+                        },
+                        "required": ["deviceId"],
+                        "x-builder": {"order": ["deviceId"]},
+                    }
+                },
+            },
+            "response_schema": {
+                "type": "object",
+                "properties": {
+                    "ok": {
+                        "type": "boolean",
+                        "x-mock": {"mode": "fixed", "value": True, "options": {}},
+                    }
+                },
+                "required": ["ok"],
+                "x-builder": {"order": ["ok"]},
+                "x-mock": {"mode": "generate"},
+            },
+            "success_status_code": 200,
+            "error_rate": 0.0,
+            "latency_min_ms": 0,
+            "latency_max_ms": 0,
+            "seed_key": None,
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+    endpoint_id = create_response.json()["id"]
+
+    update_response = client.put(
+        f"/api/admin/endpoints/{endpoint_id}",
+        json={
+            "path": "/api/devices/{serialNumber}",
+        },
+        headers=headers,
+    )
+    assert update_response.status_code == 200
+
+    request_path_schema = update_response.json()["request_schema"]["x-request"]["path"]
+    assert request_path_schema["required"] == ["serialNumber"]
+    assert request_path_schema["x-builder"]["order"] == ["serialNumber"]
+    assert list(request_path_schema["properties"]) == ["serialNumber"]
+    assert request_path_schema["properties"]["serialNumber"]["type"] == "string"
+
+
 def test_legacy_rows_migrate_to_unified_response_schema():
     engine.dispose()
     if TEST_DB_PATH.exists():

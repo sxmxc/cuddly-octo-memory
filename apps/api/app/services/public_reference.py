@@ -4,7 +4,7 @@ import re
 from typing import Any, Iterable
 
 from app.services.mock_generation import preview_from_schema
-from app.services.schema_contract import sanitize_public_schema
+from app.services.schema_contract import extract_request_body_schema, sanitize_public_schema
 from app.time_utils import utc_now
 
 
@@ -36,11 +36,12 @@ def _endpoint_sort_key(endpoint: Any) -> tuple[str, str, str]:
 
 
 def _sample_request(endpoint: Any) -> Any | None:
-    if str(endpoint.method or "").upper() not in BODY_METHODS or not endpoint.request_schema:
+    body_schema = extract_request_body_schema(endpoint.request_schema)
+    if str(endpoint.method or "").upper() not in BODY_METHODS or not body_schema:
         return None
 
     return preview_from_schema(
-        endpoint.request_schema,
+        body_schema,
         seed_key=endpoint.seed_key,
         identity=f"reference-request:{endpoint.id}:{endpoint.method}:{endpoint.path}",
     )
@@ -58,7 +59,7 @@ def serialize_public_endpoint(endpoint: Any) -> dict[str, Any]:
         "summary": endpoint.summary,
         "description": endpoint.description,
         "success_status_code": endpoint.success_status_code,
-        "request_schema": sanitize_public_schema(endpoint.request_schema or {}),
+        "request_schema": sanitize_public_schema(extract_request_body_schema(endpoint.request_schema)),
         "response_schema": sanitize_public_schema(endpoint.response_schema or {}),
         "sample_request": _sample_request(endpoint),
         "sample_response": preview_from_schema(

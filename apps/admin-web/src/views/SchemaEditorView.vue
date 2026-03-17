@@ -2,23 +2,37 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { AdminApiError, getEndpoint, updateEndpoint } from "../api/admin";
+import RequestParameterEditor from "../components/RequestParameterEditor.vue";
 import SchemaEditorWorkspace from "../components/SchemaEditorWorkspace.vue";
 import { useAuth } from "../composables/useAuth";
 import { schemaToTree, validateTree } from "../schemaBuilder";
 import type { BuilderScope } from "../schemaBuilder";
 import type { Endpoint, JsonObject } from "../types/endpoints";
 import { describeAdminError, endpointToPayload } from "../utils/endpointDrafts";
+import {
+  buildRequestSchemaContract,
+  extractRequestBodySchema,
+  extractRequestParameterDefinitions,
+  syncPathParameterDefinitions,
+  validateRequestParameterDefinitions,
+  type RequestParameterDefinition,
+} from "../utils/requestSchema";
 import { extractPathParameters } from "../utils/pathParameters";
+
+type RequestSection = "body" | "path" | "query";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuth();
 
 const endpoint = ref<Endpoint | null>(null);
-const requestSchema = ref<JsonObject>({});
+const requestBodySchema = ref<JsonObject>({});
+const requestPathParameters = ref<RequestParameterDefinition[]>([]);
+const requestQueryParameters = ref<RequestParameterDefinition[]>([]);
 const responseSchema = ref<JsonObject>({});
 const seedKey = ref("");
 const tab = ref<BuilderScope>(route.query.tab === "request" ? "request" : "response");
+const requestSection = ref<RequestSection>("body");
 const isLoading = ref(true);
 const isSaving = ref(false);
 const loadError = ref<string | null>(null);
@@ -30,18 +44,24 @@ const endpointId = computed(() => {
   return typeof rawId === "string" ? Number(rawId) : null;
 });
 
+const routePathParameters = computed(() => endpoint.value ? extractPathParameters(endpoint.value.path) : []);
+const requestSchemaContract = computed(() =>
+  buildRequestSchemaContract(requestBodySchema.value, {
+    path: requestPathParameters.value,
+    query: requestQueryParameters.value,
+  }),
+);
 const isDirty = computed(() => {
   if (!endpoint.value) {
     return false;
   }
 
   return (
-    JSON.stringify(requestSchema.value) !== JSON.stringify(endpoint.value.request_schema ?? {}) ||
+    JSON.stringify(requestSchemaContract.value) !== JSON.stringify(endpoint.value.request_schema ?? {}) ||
     JSON.stringify(responseSchema.value) !== JSON.stringify(endpoint.value.response_schema ?? {}) ||
     seedKey.value !== (endpoint.value.seed_key ?? "")
   );
 });
-const pathParameters = computed(() => endpoint.value ? extractPathParameters(endpoint.value.path) : []);
 
 watch(
   () => route.query.tab,
@@ -65,12 +85,32 @@ watch(tab, (value) => {
 });
 
 watch(
+  routePathParameters,
+  (pathParameters) => {
+    requestPathParameters.value = syncPathParameterDefinitions(endpoint.value?.path ?? "", requestPathParameters.value);
+    if (!pathParameters.length && requestSection.value === "path") {
+      requestSection.value = "body";
+    }
+  },
+  { immediate: true },
+);
+
+watch(
   endpointId,
   () => {
     void loadEndpoint();
   },
   { immediate: true },
 );
+
+function hydrateRequestState(loadedEndpoint: Endpoint): void {
+  requestBodySchema.value = extractRequestBodySchema(loadedEndpoint.request_schema ?? {});
+  requestPathParameters.value = syncPathParameterDefinitions(
+    loadedEndpoint.path,
+    extractRequestParameterDefinitions(loadedEndpoint.request_schema ?? {}, "path"),
+  );
+  requestQueryParameters.value = extractRequestParameterDefinitions(loadedEndpoint.request_schema ?? {}, "query");
+}
 
 async function loadEndpoint(): Promise<void> {
   if (!endpointId.value || !auth.session.value) {
@@ -86,7 +126,7 @@ async function loadEndpoint(): Promise<void> {
   try {
     const loadedEndpoint = await getEndpoint(endpointId.value, auth.session.value);
     endpoint.value = loadedEndpoint;
-    requestSchema.value = loadedEndpoint.request_schema ?? {};
+    hydrateRequestState(loadedEndpoint);
     responseSchema.value = loadedEndpoint.response_schema ?? {};
     seedKey.value = loadedEndpoint.seed_key ?? "";
   } catch (error) {
@@ -107,7 +147,7 @@ function resetToSavedState(): void {
     return;
   }
 
-  requestSchema.value = endpoint.value.request_schema ?? {};
+  hydrateRequestState(endpoint.value);
   responseSchema.value = endpoint.value.response_schema ?? {};
   seedKey.value = endpoint.value.seed_key ?? "";
   pageError.value = null;
@@ -122,10 +162,27 @@ async function saveSchemas(): Promise<void> {
   pageError.value = null;
   pageSuccess.value = null;
 
-  const requestError = validateTree(schemaToTree(requestSchema.value, "request"));
-  if (requestError) {
-    pageError.value = requestError;
+  const requestBodyError = validateTree(schemaToTree(requestBodySchema.value, "request"));
+  if (requestBodyError) {
+    pageError.value = requestBodyError;
     tab.value = "request";
+    requestSection.value = "body";
+    return;
+  }
+
+  const pathParameterError = validateRequestParameterDefinitions(requestPathParameters.value, "path");
+  if (pathParameterError) {
+    pageError.value = pathParameterError;
+    tab.value = "request";
+    requestSection.value = "path";
+    return;
+  }
+
+  const queryParameterError = validateRequestParameterDefinitions(requestQueryParameters.value, "query");
+  if (queryParameterError) {
+    pageError.value = queryParameterError;
+    tab.value = "request";
+    requestSection.value = "query";
     return;
   }
 
@@ -142,7 +199,7 @@ async function saveSchemas(): Promise<void> {
     const updatedEndpoint = await updateEndpoint(
       endpoint.value.id,
       endpointToPayload(endpoint.value, {
-        request_schema: requestSchema.value,
+        request_schema: requestSchemaContract.value,
         response_schema: responseSchema.value,
         seed_key: seedKey.value.trim() ? seedKey.value.trim() : null,
       }),
@@ -150,7 +207,7 @@ async function saveSchemas(): Promise<void> {
     );
 
     endpoint.value = updatedEndpoint;
-    requestSchema.value = updatedEndpoint.request_schema ?? {};
+    hydrateRequestState(updatedEndpoint);
     responseSchema.value = updatedEndpoint.response_schema ?? {};
     seedKey.value = updatedEndpoint.seed_key ?? "";
     pageSuccess.value = `Saved schema changes for ${updatedEndpoint.name}.`;
@@ -208,11 +265,11 @@ async function saveSchemas(): Promise<void> {
       </div>
     </div>
 
-    <v-alert v-if="pageSuccess" border="start" color="success" variant="tonal">
+    <v-alert v-if="pageSuccess" border="start" class="schema-page-banner" color="success" variant="tonal">
       {{ pageSuccess }}
     </v-alert>
 
-    <v-alert v-if="pageError" border="start" color="error" variant="tonal">
+    <v-alert v-if="pageError" border="start" class="schema-page-banner" color="error" variant="tonal">
       {{ pageError }}
     </v-alert>
 
@@ -260,18 +317,61 @@ async function saveSchemas(): Promise<void> {
         </v-card-text>
       </v-card>
 
-      <div class="schema-workspace-shell">
-        <SchemaEditorWorkspace
-          v-if="tab === 'request'"
-          :schema="requestSchema"
-          scope="request"
-          @update:schema="requestSchema = $event"
-        />
+      <div v-if="tab === 'request'" class="schema-workspace-shell d-flex flex-column ga-4">
+        <v-card class="workspace-card">
+          <v-card-text class="d-flex flex-column flex-xl-row justify-space-between ga-4">
+            <div>
+              <div class="text-overline text-secondary">Request inputs</div>
+              <div class="text-body-1 text-medium-emphasis mt-2">
+                Model the JSON body plus any path and query inputs the route accepts.
+              </div>
+            </div>
+
+            <div class="schema-tab-shell">
+              <v-tabs
+                v-model="requestSection"
+                align-tabs="start"
+                color="primary"
+                density="compact"
+              >
+                <v-tab value="body">JSON body</v-tab>
+                <v-tab v-if="routePathParameters.length" value="path">Path params</v-tab>
+                <v-tab value="query">Query params</v-tab>
+              </v-tabs>
+            </div>
+          </v-card-text>
+        </v-card>
 
         <SchemaEditorWorkspace
+          v-if="requestSection === 'body'"
+          :schema="requestBodySchema"
+          scope="request"
+          @update:schema="requestBodySchema = $event"
+        />
+
+        <RequestParameterEditor
+          v-else-if="requestSection === 'path'"
+          :parameters="requestPathParameters"
+          location="path"
+          subtitle="Path parameters follow the saved route template, so their names stay locked to the URL placeholders."
+          title="Path parameters"
+          @update:parameters="requestPathParameters = $event"
+        />
+
+        <RequestParameterEditor
           v-else
+          :parameters="requestQueryParameters"
+          location="query"
+          subtitle="Add optional query string inputs and describe the scalar values each one accepts."
+          title="Query parameters"
+          @update:parameters="requestQueryParameters = $event"
+        />
+      </div>
+
+      <div v-else class="schema-workspace-shell">
+        <SchemaEditorWorkspace
           v-model:seed-key="seedKey"
-          :path-parameters="pathParameters"
+          :path-parameters="requestPathParameters"
           :schema="responseSchema"
           scope="response"
           @update:schema="responseSchema = $event"
@@ -287,6 +387,11 @@ async function saveSchemas(): Promise<void> {
 }
 
 .schema-workspace-shell {
+  min-height: 0;
+}
+
+.schema-page-banner {
+  flex: 0 0 auto;
   min-height: 0;
 }
 </style>

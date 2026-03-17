@@ -81,6 +81,48 @@ export interface Endpoint extends Omit<EndpointPayload, "slug"> {
   updated_at: string;
 }
 
+export type EndpointImportMode = "create_only" | "upsert" | "replace_all";
+
+export interface EndpointBundle {
+  schema_version: number;
+  product: string;
+  exported_at: string;
+  endpoints: EndpointPayload[];
+}
+
+export interface EndpointImportRequestPayload {
+  bundle: EndpointBundle;
+  mode: EndpointImportMode;
+  dry_run: boolean;
+  confirm_replace_all: boolean;
+}
+
+export interface EndpointImportOperation {
+  action: string;
+  method: string;
+  path: string;
+  name: string;
+  detail: string | null;
+}
+
+export interface EndpointImportSummary {
+  endpoint_count: number;
+  create_count: number;
+  update_count: number;
+  delete_count: number;
+  skip_count: number;
+  error_count: number;
+}
+
+export interface EndpointImportResponse {
+  dry_run: boolean;
+  applied: boolean;
+  has_errors: boolean;
+  mode: EndpointImportMode;
+  summary: EndpointImportSummary;
+  operations: EndpointImportOperation[];
+}
+
 export interface EndpointDraft {
   name: string;
   method: string;

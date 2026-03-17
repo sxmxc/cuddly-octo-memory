@@ -8,6 +8,11 @@ import { useAuth } from "../composables/useAuth";
 import { setPillDragImage } from "../utils/dragGhost";
 import { highlightJson } from "../utils/jsonHighlight";
 import {
+  buildDefaultParameterValue,
+  createRequestParameterDefinition,
+  type RequestParameterDefinition,
+} from "../utils/requestSchema";
+import {
   GENERATOR_OPTIONS,
   PALETTE_TYPES,
   addNodeToContainer,
@@ -39,12 +44,12 @@ import type { JsonObject, JsonValue } from "../types/endpoints";
 type DragPayload =
   | { kind: "mode-palette"; mode: MockMode }
   | { kind: "node-palette"; nodeType: BuilderNodeType }
-  | { kind: "path-parameter"; parameter: string }
+  | { kind: "path-parameter"; parameter: RequestParameterDefinition }
   | { kind: "value-palette"; valueType: string }
   | { kind: "node"; nodeId: string };
 
 const props = defineProps<{
-  pathParameters?: string[];
+  pathParameters?: Array<RequestParameterDefinition | string>;
   schema: JsonObject;
   scope: BuilderScope;
   seedKey?: string;
@@ -208,10 +213,42 @@ const previewCopyLabel = computed(() => {
 const liveSchema = ref<JsonObject>({});
 const selectedNode = shallowRef<SchemaBuilderNode>(tree.value);
 const selectedParent = shallowRef<SchemaBuilderNode | null>(null);
-const responsePathParameters = computed(() => props.scope === "response" ? [...new Set(props.pathParameters ?? [])] : []);
+const responsePathParameters = computed<RequestParameterDefinition[]>(() => {
+  if (props.scope !== "response") {
+    return [];
+  }
+
+  const seen = new Set<string>();
+
+  return (props.pathParameters ?? []).reduce<RequestParameterDefinition[]>((accumulator, parameter, index) => {
+    const normalized = typeof parameter === "string"
+      ? createRequestParameterDefinition("path", {
+          id: `path-${parameter}-${index}`,
+          name: parameter,
+          required: true,
+        })
+      : {
+          ...parameter,
+          id: parameter.id || `path-${parameter.name}-${index}`,
+          required: true,
+        };
+    const trimmedName = normalized.name.trim();
+    if (!trimmedName || seen.has(trimmedName)) {
+      return accumulator;
+    }
+
+    seen.add(trimmedName);
+    accumulator.push({
+      ...normalized,
+      name: trimmedName,
+      required: true,
+    });
+    return accumulator;
+  }, []);
+});
 const previewPathParameters = computed(() =>
   responsePathParameters.value.reduce<Record<string, string>>((accumulator, parameter) => {
-    accumulator[parameter] = `sample-${parameter}`;
+    accumulator[parameter.name] = buildDefaultParameterValue(parameter);
     return accumulator;
   }, {}),
 );
@@ -499,13 +536,13 @@ function startValuePaletteDrag(valueType: string, event?: DragEvent): void {
   });
 }
 
-function startPathParameterDrag(parameter: string, event?: DragEvent): void {
+function startPathParameterDrag(parameter: RequestParameterDefinition, event?: DragEvent): void {
   dragPayload.value = { kind: "path-parameter", parameter };
-  setDragData(event, `path-parameter:${parameter}`, "copy");
+  setDragData(event, `path-parameter:${parameter.name}`, "copy");
   markDragSource(event);
   setPillDragImage(event, {
     eyebrow: "Route",
-    label: parameter,
+    label: parameter.name,
     tone: "value",
   });
 }
@@ -555,7 +592,7 @@ function applyValueTypeFromPalette(valueType: string): void {
   commitTree(applyValueType(tree.value, selectedNode.value.id, valueType, props.scope));
 }
 
-function applyPathParameterFromPalette(parameter: string): void {
+function applyPathParameterFromPalette(parameter: RequestParameterDefinition): void {
   if (!selectedHasValueLane.value) {
     return;
   }
@@ -844,10 +881,10 @@ onBeforeUnmount(() => {
               <div class="schema-value-palette-wrap">
                 <v-chip
                   v-for="parameter in responsePathParameters"
-                  :key="parameter"
-                  :data-path-parameter="parameter"
+                  :key="parameter.name"
+                  :data-path-parameter="parameter.name"
                   class="schema-value-pill schema-value-pill-parameter"
-                  :class="{ 'schema-value-pill-active': selectedUsesPathParameter && selectedNode.parameterSource === parameter }"
+                  :class="{ 'schema-value-pill-active': selectedUsesPathParameter && selectedNode.parameterSource === parameter.name }"
                   :draggable="true"
                   label
                   size="small"
@@ -858,7 +895,7 @@ onBeforeUnmount(() => {
                   <template #prepend>
                     <v-icon icon="mdi-variable" size="18" />
                   </template>
-                  {{ parameter }}
+                  {{ parameter.name }}
                 </v-chip>
               </div>
             </div>
@@ -1046,7 +1083,7 @@ onBeforeUnmount(() => {
               @update:model-value="updateSelectedValueType"
             />
 
-            <v-row v-if="selectedNode.type === 'string'">
+            <v-row v-if="selectedNode.type === 'string' && !selectedUsesPathParameter">
               <v-col cols="6">
                 <v-text-field
                   label="Min length"

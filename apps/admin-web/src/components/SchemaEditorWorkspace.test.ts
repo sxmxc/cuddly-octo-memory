@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from "vue-router";
 import SchemaEditorWorkspace from "./SchemaEditorWorkspace.vue";
 import { AdminApiError, previewResponse } from "../api/admin";
 import { vuetify } from "../plugins/vuetify";
+import { createRequestParameterDefinition } from "../utils/requestSchema";
 import type { BuilderScope } from "../schemaBuilder";
 import type { JsonObject } from "../types/endpoints";
 
@@ -52,7 +53,7 @@ function createRouterInstance() {
 }
 
 async function renderWorkspace(
-  props: { pathParameters?: string[]; schema: JsonObject; scope: BuilderScope; seedKey?: string },
+  props: { pathParameters?: Array<ReturnType<typeof createRequestParameterDefinition> | string>; schema: JsonObject; scope: BuilderScope; seedKey?: string },
 ): Promise<ReturnType<typeof render> & { router: ReturnType<typeof createRouterInstance> }> {
   const router = createRouterInstance();
   await router.push("/");
@@ -332,6 +333,67 @@ describe("SchemaEditorWorkspace", () => {
     });
   });
 
+  it("adopts the request path parameter type and format when linking a generic response field", async () => {
+    const { emitted } = await renderWorkspace({
+      pathParameters: [
+        createRequestParameterDefinition("path", {
+          name: "deviceId",
+          type: "string",
+          format: "uuid",
+        }),
+      ],
+      schema: {
+        type: "object",
+        properties: {
+          linkedValue: {
+            type: "string",
+          },
+        },
+        required: [],
+        "x-builder": {
+          order: ["linkedValue"],
+        },
+      },
+      scope: "response",
+    });
+
+    const linkedValueNode = findSchemaNodeByLabel("linkedValue");
+    expect(linkedValueNode).not.toBeNull();
+
+    const valueSlot = document.querySelector(
+      `[data-drop-zone="value"][data-drop-target="${linkedValueNode?.getAttribute("data-node-id")}"]`,
+    );
+    const parameterPill = document.querySelector('[data-path-parameter="deviceId"]');
+
+    expect(valueSlot).not.toBeNull();
+    expect(parameterPill).not.toBeNull();
+
+    await fireEvent.dragStart(parameterPill as Element);
+    await fireEvent.drop(valueSlot as Element);
+
+    const schemaUpdates = emitted()["update:schema"] as Array<[JsonObject]> | undefined;
+    expect(schemaUpdates?.at(-1)?.[0]).toMatchObject({
+      properties: {
+        linkedValue: {
+          type: "string",
+          format: "uuid",
+          "x-mock": {
+            mode: "generate",
+            type: "path_parameter",
+            generator: "path_parameter",
+            parameter: "deviceId",
+            options: {
+              parameter: "deviceId",
+            },
+          },
+        },
+      },
+    });
+
+    expect(screen.queryByLabelText("Min length")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Max length")).not.toBeInTheDocument();
+  });
+
   it("assigns value types and behaviors through the scalar value lane", async () => {
     const { emitted } = await renderWorkspace({
       schema: {
@@ -421,6 +483,78 @@ describe("SchemaEditorWorkspace", () => {
     await fireEvent.update(screen.getByLabelText("Seed key"), "seed-456");
 
     expect(emitted()["update:seedKey"]?.at(-1)).toEqual(["seed-456"]);
+  });
+
+  it("uses typed request path parameter defaults when seeding response previews", async () => {
+    vi.mocked(previewResponse).mockResolvedValue({
+      preview: {
+        id: "11111111-1111-4111-8111-111111111111",
+      },
+    });
+
+    await renderWorkspace({
+      pathParameters: [
+        createRequestParameterDefinition("path", {
+          name: "deviceId",
+          type: "string",
+          format: "uuid",
+        }),
+      ],
+      schema: createObjectSchema("id"),
+      scope: "response",
+    });
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(previewResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "object",
+      }),
+      null,
+      {
+        deviceId: "11111111-1111-4111-8111-111111111111",
+      },
+      expect.objectContaining({
+        token: "session-token",
+      }),
+    );
+  });
+
+  it("clips generated path-parameter preview samples to the configured max length", async () => {
+    vi.mocked(previewResponse).mockResolvedValue({
+      preview: {
+        slug: "sample",
+      },
+    });
+
+    await renderWorkspace({
+      pathParameters: [
+        createRequestParameterDefinition("path", {
+          name: "slug",
+          type: "string",
+          maxLength: 6,
+        }),
+      ],
+      schema: createObjectSchema("slug"),
+      scope: "response",
+    });
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(previewResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "object",
+      }),
+      null,
+      {
+        slug: "sample",
+      },
+      expect.objectContaining({
+        token: "session-token",
+      }),
+    );
   });
 
   it("copies schema and preview json through the schema actions", async () => {

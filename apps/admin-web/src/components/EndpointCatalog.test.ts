@@ -87,6 +87,24 @@ describe("EndpointCatalog", () => {
     expect(screen.queryByText("List invoices")).not.toBeInTheDocument();
   });
 
+  it("keeps showing the last synced routes when a refresh error is present", () => {
+    render(EndpointCatalog, {
+      props: {
+        activeEndpointId: 1,
+        endpoints,
+        error: "Showing the last synced catalog. Temporary refresh failure.",
+        loading: false,
+      },
+      global: {
+        plugins: [vuetify],
+      },
+    });
+
+    expect(screen.getByText("Showing the last synced catalog. Temporary refresh failure.")).toBeInTheDocument();
+    expect(screen.getByText("List users")).toBeInTheDocument();
+    expect(screen.getByText("List invoices")).toBeInTheDocument();
+  });
+
   it("emits duplicate without selecting the row when the copy action is clicked", () => {
     const handleDuplicate = vi.fn();
     const handleSelect = vi.fn();
