@@ -1,17 +1,27 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   AdminApiError,
   createEndpoint,
   deleteEndpoint,
+  exportEndpointBundle,
+  importEndpointBundle,
   listEndpoints,
   updateEndpoint,
 } from "../api/admin";
 import EndpointCatalog from "../components/EndpointCatalog.vue";
 import EndpointSettingsForm from "../components/EndpointSettingsForm.vue";
 import { useAuth } from "../composables/useAuth";
-import type { Endpoint, EndpointDraft } from "../types/endpoints";
+import type {
+  Endpoint,
+  EndpointBundle,
+  EndpointDraft,
+  EndpointImportMode,
+  EndpointImportOperation,
+  EndpointImportResponse,
+  EndpointImportSummary,
+} from "../types/endpoints";
 import {
   buildPayload,
   createDuplicateDraft,
@@ -19,6 +29,9 @@ import {
   describeAdminError,
   draftFromEndpoint,
 } from "../utils/endpointDrafts";
+
+const CATALOG_BACKGROUND_REFRESH_MS = 30_000;
+const CATALOG_STALE_AFTER_MS = 15_000;
 
 const props = defineProps<{
   mode: "browse" | "create" | "edit";
@@ -36,6 +49,34 @@ const isSaving = ref(false);
 const catalogError = ref<string | null>(null);
 const pageError = ref<string | null>(null);
 const pageSuccess = ref<string | null>(null);
+const lastCatalogSyncAt = ref<number | null>(null);
+const isExporting = ref(false);
+const importDialog = ref(false);
+const importMode = ref<EndpointImportMode>("upsert");
+const importFile = ref<File | null>(null);
+const importText = ref("");
+const importPreview = ref<EndpointImportResponse | null>(null);
+const importError = ref<string | null>(null);
+const isPreviewingImport = ref(false);
+const isApplyingImport = ref(false);
+
+let catalogRefreshTimer: number | null = null;
+let pendingCatalogRequest: Promise<void> | null = null;
+
+const importModeOptions: Array<{ title: string; value: EndpointImportMode }> = [
+  {
+    title: "Upsert existing routes",
+    value: "upsert",
+  },
+  {
+    title: "Create only",
+    value: "create_only",
+  },
+  {
+    title: "Replace all routes",
+    value: "replace_all",
+  },
+];
 
 const endpointId = computed(() => {
   const rawId = route.params.endpointId;
@@ -55,7 +96,9 @@ const duplicateSourceId = computed(() => {
 const selectedEndpoint = computed(() =>
   endpointId.value ? endpoints.value.find((endpoint) => endpoint.id === endpointId.value) ?? null : null,
 );
-
+const selectedEndpointSyncKey = computed(() =>
+  selectedEndpoint.value ? `${selectedEndpoint.value.id}:${selectedEndpoint.value.updated_at}` : null,
+);
 const duplicateSource = computed(() =>
   duplicateSourceId.value ? endpoints.value.find((endpoint) => endpoint.id === duplicateSourceId.value) ?? null : null,
 );
@@ -63,12 +106,30 @@ const duplicateRequestNonce = computed(() => {
   const rawValue = Array.isArray(route.query.duplicateNonce) ? route.query.duplicateNonce[0] : route.query.duplicateNonce;
   return typeof rawValue === "string" ? rawValue : "";
 });
+const createDraftHydrationKey = computed(() => {
+  if (props.mode !== "create") {
+    return null;
+  }
+
+  if (!duplicateSourceId.value) {
+    return `new:${duplicateRequestNonce.value || "fresh"}`;
+  }
+
+  return `${duplicateSourceId.value}:${duplicateRequestNonce.value}:${duplicateSource.value ? "ready" : "pending"}`;
+});
 const savedQueryFlag = computed(() => {
   const rawValue = Array.isArray(route.query.saved) ? route.query.saved[0] : route.query.saved;
   return rawValue === "1";
 });
 
 const isInitialCatalogLoad = computed(() => isLoading.value && endpoints.value.length === 0);
+const isSelectedEndpointDraftDirty = computed(() => {
+  if (props.mode !== "edit" || !selectedEndpoint.value) {
+    return false;
+  }
+
+  return JSON.stringify(draft.value) !== JSON.stringify(draftFromEndpoint(selectedEndpoint.value));
+});
 const recordTransitionKey = computed(() =>
   props.mode === "create" ? "create" : selectedEndpoint.value ? `endpoint-${selectedEndpoint.value.id}` : "empty",
 );
@@ -98,60 +159,222 @@ const availableTags = computed(() =>
     ),
   ).sort((left, right) => left.localeCompare(right)),
 );
+const canApplyImport = computed(() =>
+  Boolean(importPreview.value) && !importPreview.value?.has_errors && !isPreviewingImport.value && !isApplyingImport.value,
+);
 
-async function fetchEndpoints(): Promise<void> {
+function mergeEndpointCatalog(nextEndpoints: Endpoint[]): Endpoint[] {
+  const currentEndpointsById = new Map(endpoints.value.map((endpoint) => [endpoint.id, endpoint]));
+  const preserveEndpointId =
+    isSelectedEndpointDraftDirty.value && selectedEndpoint.value ? selectedEndpoint.value.id : null;
+
+  return nextEndpoints.map((endpoint) => {
+    const previous = currentEndpointsById.get(endpoint.id);
+    if (!previous) {
+      return endpoint;
+    }
+
+    if (preserveEndpointId !== null && endpoint.id === preserveEndpointId) {
+      return previous;
+    }
+
+    return JSON.stringify(previous) === JSON.stringify(endpoint) ? previous : endpoint;
+  });
+}
+
+function hasStaleCatalog(): boolean {
+  return lastCatalogSyncAt.value === null || Date.now() - lastCatalogSyncAt.value >= CATALOG_STALE_AFTER_MS;
+}
+
+async function fetchEndpoints(options: { background?: boolean } = {}): Promise<void> {
   if (!auth.session.value) {
     endpoints.value = [];
+    catalogError.value = null;
+    lastCatalogSyncAt.value = null;
     return;
   }
 
-  isLoading.value = true;
-  catalogError.value = null;
-
-  try {
-    endpoints.value = await listEndpoints(auth.session.value);
-  } catch (error) {
-    if (error instanceof AdminApiError && error.status === 401) {
-      void auth.logout("Your admin session expired. Sign in again to keep editing.");
-      void router.push({ name: "login" });
-      return;
-    }
-
-    endpoints.value = [];
-    catalogError.value = describeAdminError(error, "Unable to load endpoints.");
-  } finally {
-    isLoading.value = false;
+  if (pendingCatalogRequest) {
+    return pendingCatalogRequest;
   }
+
+  isLoading.value = true;
+  if (!options.background || endpoints.value.length === 0) {
+    catalogError.value = null;
+  }
+
+  pendingCatalogRequest = (async () => {
+    try {
+      const nextEndpoints = await listEndpoints(auth.session.value!);
+      endpoints.value = mergeEndpointCatalog(nextEndpoints);
+      catalogError.value = null;
+      lastCatalogSyncAt.value = Date.now();
+    } catch (error) {
+      if (error instanceof AdminApiError && error.status === 401) {
+        void auth.logout("Your admin session expired. Sign in again to keep editing.");
+        void router.push({ name: "login" });
+        return;
+      }
+
+      catalogError.value =
+        endpoints.value.length > 0
+          ? `Showing the last synced catalog. ${describeAdminError(error, "Unable to refresh the route catalog.")}`
+          : describeAdminError(error, "Unable to load endpoints.");
+    } finally {
+      isLoading.value = false;
+      pendingCatalogRequest = null;
+    }
+  })();
+
+  return pendingCatalogRequest;
+}
+
+function refreshCatalogInBackground(force = false): void {
+  if (!auth.session.value || pendingCatalogRequest) {
+    return;
+  }
+
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+    return;
+  }
+
+  if (!force && !hasStaleCatalog()) {
+    return;
+  }
+
+  void fetchEndpoints({ background: true });
 }
 
 watch(
   () => auth.session.value,
-  () => {
+  (session) => {
+    if (!session) {
+      endpoints.value = [];
+      catalogError.value = null;
+      lastCatalogSyncAt.value = null;
+      return;
+    }
+
     void fetchEndpoints();
   },
   { immediate: true },
 );
 
 watch(
-  [() => props.mode, selectedEndpoint, duplicateSource, duplicateRequestNonce, savedQueryFlag],
-  () => {
-    fieldErrors.value = {};
-    pageError.value = null;
-    pageSuccess.value = savedQueryFlag.value ? "Saved endpoint settings." : null;
-
-    if (props.mode === "create") {
-      draft.value = duplicateSource.value
-        ? createDuplicateDraft(duplicateSource.value, endpoints.value)
-        : createEmptyDraft();
+  createDraftHydrationKey,
+  (currentKey, previousKey) => {
+    if (props.mode !== "create" || !currentKey || currentKey === previousKey) {
       return;
     }
 
-    if (props.mode === "edit" && selectedEndpoint.value) {
+    fieldErrors.value = {};
+    pageError.value = null;
+    pageSuccess.value = savedQueryFlag.value ? "Saved endpoint settings." : null;
+    draft.value = duplicateSource.value
+      ? createDuplicateDraft(duplicateSource.value, endpoints.value)
+      : createEmptyDraft();
+  },
+  { immediate: true },
+);
+
+watch(
+  [selectedEndpointSyncKey, endpointId],
+  ([currentKey, currentEndpointId], previousValues) => {
+    const [previousKey, previousEndpointId] = previousValues ?? [null, null];
+    if (props.mode !== "edit" || !currentKey || currentKey === previousKey) {
+      return;
+    }
+
+    fieldErrors.value = {};
+    pageError.value = null;
+
+    if (currentEndpointId !== previousEndpointId) {
+      pageSuccess.value = savedQueryFlag.value ? "Saved endpoint settings." : null;
+    }
+
+    if (selectedEndpoint.value) {
       draft.value = draftFromEndpoint(selectedEndpoint.value);
     }
   },
   { immediate: true },
 );
+
+watch(
+  () => props.mode,
+  (mode, previousMode) => {
+    if (mode !== "browse" || mode === previousMode) {
+      return;
+    }
+
+    fieldErrors.value = {};
+    pageError.value = null;
+    if (!savedQueryFlag.value) {
+      pageSuccess.value = null;
+    }
+  },
+);
+
+watch([importMode, importText, importFile], () => {
+  importPreview.value = null;
+  importError.value = null;
+});
+
+watch(importDialog, (isOpen) => {
+  if (isOpen) {
+    return;
+  }
+
+  importMode.value = "upsert";
+  importFile.value = null;
+  importText.value = "";
+  importPreview.value = null;
+  importError.value = null;
+  isPreviewingImport.value = false;
+  isApplyingImport.value = false;
+});
+
+function handleWindowFocus(): void {
+  refreshCatalogInBackground();
+}
+
+function handleWindowOnline(): void {
+  refreshCatalogInBackground(true);
+}
+
+function handleVisibilityChange(): void {
+  if (document.visibilityState === "visible") {
+    refreshCatalogInBackground();
+  }
+}
+
+onMounted(() => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  catalogRefreshTimer = window.setInterval(() => {
+    refreshCatalogInBackground();
+  }, CATALOG_BACKGROUND_REFRESH_MS);
+
+  window.addEventListener("focus", handleWindowFocus);
+  window.addEventListener("online", handleWindowOnline);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
+});
+
+onBeforeUnmount(() => {
+  if (catalogRefreshTimer !== null && typeof window !== "undefined") {
+    window.clearInterval(catalogRefreshTimer);
+  }
+
+  if (typeof window !== "undefined") {
+    window.removeEventListener("focus", handleWindowFocus);
+    window.removeEventListener("online", handleWindowOnline);
+  }
+
+  if (typeof document !== "undefined") {
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }
+});
 
 function applyDraftPatch(patch: Partial<EndpointDraft>): void {
   draft.value = {
@@ -162,6 +385,10 @@ function applyDraftPatch(patch: Partial<EndpointDraft>): void {
 
 function openCreateView(): void {
   void router.push({ name: "endpoints-create" });
+}
+
+function openImportDialog(): void {
+  importDialog.value = true;
 }
 
 function duplicateEndpoint(endpointId: number): void {
@@ -196,6 +423,7 @@ async function handleSave(): Promise<void> {
     if (props.mode === "create") {
       const createdEndpoint = await createEndpoint(payload, auth.session.value);
       endpoints.value = [createdEndpoint, ...endpoints.value];
+      lastCatalogSyncAt.value = Date.now();
       void router.push({ name: "endpoints-edit", params: { endpointId: createdEndpoint.id }, query: { saved: "1" } });
       return;
     }
@@ -207,6 +435,7 @@ async function handleSave(): Promise<void> {
 
     const updatedEndpoint = await updateEndpoint(selectedEndpoint.value.id, payload, auth.session.value);
     endpoints.value = endpoints.value.map((endpoint) => (endpoint.id === updatedEndpoint.id ? updatedEndpoint : endpoint));
+    lastCatalogSyncAt.value = Date.now();
     pageSuccess.value = `Saved ${updatedEndpoint.name}.`;
   } catch (error) {
     if (error instanceof AdminApiError && error.status === 401) {
@@ -238,6 +467,7 @@ async function handleDelete(): Promise<void> {
   try {
     await deleteEndpoint(selectedEndpoint.value.id, auth.session.value);
     endpoints.value = endpoints.value.filter((endpoint) => endpoint.id !== selectedEndpoint.value?.id);
+    lastCatalogSyncAt.value = Date.now();
     void router.push({ name: "endpoints-browse" });
   } catch (error) {
     if (error instanceof AdminApiError && error.status === 401) {
@@ -274,6 +504,193 @@ function duplicateSelectedEndpoint(): void {
   }
 
   duplicateEndpoint(selectedEndpoint.value.id);
+}
+
+function handleImportFileChange(value: File | File[] | null): void {
+  importFile.value = Array.isArray(value) ? value[0] ?? null : value;
+}
+
+function importOperationColor(action: EndpointImportOperation["action"]): string {
+  if (action === "create") {
+    return "accent";
+  }
+
+  if (action === "update") {
+    return "primary";
+  }
+
+  if (action === "delete" || action === "error") {
+    return "error";
+  }
+
+  return "secondary";
+}
+
+function importOperationLabel(action: EndpointImportOperation["action"]): string {
+  return action.replace(/_/g, " ");
+}
+
+function formatImportSummary(prefix: string, summary: EndpointImportSummary): string {
+  const parts = [
+    summary.create_count ? `${summary.create_count} created` : null,
+    summary.update_count ? `${summary.update_count} updated` : null,
+    summary.delete_count ? `${summary.delete_count} deleted` : null,
+    summary.skip_count ? `${summary.skip_count} skipped` : null,
+    summary.error_count ? `${summary.error_count} errors` : null,
+  ].filter(Boolean);
+
+  return parts.length > 0
+    ? `${prefix}: ${parts.join(", ")}.`
+    : `${prefix}: no route changes were needed.`;
+}
+
+async function resolveImportBundle(): Promise<EndpointBundle> {
+  const rawText = importText.value.trim()
+    ? importText.value.trim()
+    : importFile.value
+      ? (await importFile.value.text()).trim()
+      : "";
+
+  if (!rawText) {
+    throw new Error("Choose a JSON bundle file or paste a bundle before previewing the import.");
+  }
+
+  try {
+    return JSON.parse(rawText) as EndpointBundle;
+  } catch {
+    throw new Error("The import bundle must be valid JSON.");
+  }
+}
+
+async function previewImportRoutes(): Promise<void> {
+  if (!auth.session.value) {
+    pageError.value = "Sign in again before importing routes.";
+    importDialog.value = false;
+    return;
+  }
+
+  isPreviewingImport.value = true;
+  importError.value = null;
+
+  try {
+    const bundle = await resolveImportBundle();
+    importPreview.value = await importEndpointBundle(
+      {
+        bundle,
+        mode: importMode.value,
+        dry_run: true,
+        confirm_replace_all: false,
+      },
+      auth.session.value,
+    );
+  } catch (error) {
+    if (error instanceof AdminApiError && error.status === 401) {
+      void auth.logout("Your admin session expired. Sign in again before importing routes.");
+      void router.push({ name: "login" });
+      return;
+    }
+
+    importPreview.value = null;
+    importError.value = describeAdminError(error, "Unable to preview the route import.");
+  } finally {
+    isPreviewingImport.value = false;
+  }
+}
+
+async function applyImportedRoutes(): Promise<void> {
+  if (!auth.session.value) {
+    pageError.value = "Sign in again before importing routes.";
+    importDialog.value = false;
+    return;
+  }
+
+  if (importMode.value === "replace_all") {
+    const confirmed = window.confirm(
+      "Replace the full route catalog with this bundle? Routes not present in the bundle will be deleted.",
+    );
+    if (!confirmed) {
+      return;
+    }
+  }
+
+  isApplyingImport.value = true;
+  importError.value = null;
+
+  try {
+    const bundle = await resolveImportBundle();
+    const result = await importEndpointBundle(
+      {
+        bundle,
+        mode: importMode.value,
+        dry_run: false,
+        confirm_replace_all: importMode.value === "replace_all",
+      },
+      auth.session.value,
+    );
+    importPreview.value = result;
+
+    if (!result.applied) {
+      importError.value = result.has_errors
+        ? "Fix the bundle issues below before importing routes."
+        : "The import preview did not produce any route changes.";
+      return;
+    }
+
+    await fetchEndpoints();
+    pageError.value = null;
+    pageSuccess.value = formatImportSummary("Import complete", result.summary);
+    importDialog.value = false;
+  } catch (error) {
+    if (error instanceof AdminApiError && error.status === 401) {
+      void auth.logout("Your admin session expired. Sign in again before importing routes.");
+      void router.push({ name: "login" });
+      return;
+    }
+
+    importError.value = describeAdminError(error, "Unable to import routes.");
+  } finally {
+    isApplyingImport.value = false;
+  }
+}
+
+async function exportRoutes(): Promise<void> {
+  if (!auth.session.value) {
+    pageError.value = "Sign in again before exporting routes.";
+    return;
+  }
+
+  isExporting.value = true;
+  pageError.value = null;
+
+  try {
+    const bundle = await exportEndpointBundle(auth.session.value);
+    const serialized = JSON.stringify(bundle, null, 2);
+
+    if (typeof window !== "undefined") {
+      const blob = new Blob([serialized], { type: "application/json" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const exportDate = bundle.exported_at ? bundle.exported_at.slice(0, 10) : new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `mockingbird-endpoints-${exportDate}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    }
+
+    pageSuccess.value = `Exported ${bundle.endpoints.length} routes.`;
+  } catch (error) {
+    if (error instanceof AdminApiError && error.status === 401) {
+      void auth.logout("Your admin session expired. Sign in again before exporting routes.");
+      void router.push({ name: "login" });
+      return;
+    }
+
+    pageError.value = describeAdminError(error, "Unable to export routes.");
+  } finally {
+    isExporting.value = false;
+  }
 }
 
 const activeTitle = computed(() => {
@@ -340,6 +757,12 @@ const activeTitle = computed(() => {
                 </v-btn>
                 <v-btn prepend-icon="mdi-refresh" variant="text" @click="fetchEndpoints">
                   Refresh routes
+                </v-btn>
+                <v-btn :loading="isExporting" prepend-icon="mdi-download" variant="text" @click="exportRoutes">
+                  Export routes
+                </v-btn>
+                <v-btn prepend-icon="mdi-upload" variant="text" @click="openImportDialog">
+                  Import routes
                 </v-btn>
               </div>
             </v-card-text>
@@ -421,6 +844,139 @@ const activeTitle = computed(() => {
       </div>
     </v-col>
   </v-row>
+
+  <v-dialog v-model="importDialog" max-width="960">
+    <v-card class="workspace-card">
+      <v-card-item>
+        <v-card-title>Import routes</v-card-title>
+        <v-card-subtitle>Preview a native Mockingbird bundle before applying it to this catalog.</v-card-subtitle>
+      </v-card-item>
+
+      <v-divider />
+
+      <v-card-text class="d-flex flex-column ga-4">
+        <v-alert v-if="importError" border="start" color="error" variant="tonal">
+          {{ importError }}
+        </v-alert>
+
+        <v-alert
+          v-else-if="importPreview?.has_errors"
+          border="start"
+          color="warning"
+          variant="tonal"
+        >
+          Review the bundle errors below before importing routes.
+        </v-alert>
+
+        <v-select
+          :disabled="isPreviewingImport || isApplyingImport"
+          :items="importModeOptions"
+          item-title="title"
+          item-value="value"
+          label="Import mode"
+          :model-value="importMode"
+          @update:model-value="importMode = ($event as EndpointImportMode | null) ?? 'upsert'"
+        />
+
+        <v-file-input
+          accept=".json,application/json"
+          clearable
+          :disabled="isPreviewingImport || isApplyingImport"
+          label="Bundle file"
+          :model-value="importFile"
+          prepend-icon="mdi-file-import-outline"
+          show-size
+          @update:model-value="handleImportFileChange"
+        />
+
+        <div class="text-caption text-medium-emphasis">Or paste the bundle JSON directly.</div>
+
+        <v-textarea
+          auto-grow
+          :disabled="isPreviewingImport || isApplyingImport"
+          label="Bundle JSON"
+          :model-value="importText"
+          rows="8"
+          @update:model-value="importText = String($event ?? '')"
+        />
+
+        <div v-if="importPreview" class="d-flex flex-column ga-3">
+          <div class="d-flex flex-wrap ga-2">
+            <v-chip color="primary" label size="small" variant="tonal">
+              {{ importPreview.summary.endpoint_count }} bundled
+            </v-chip>
+            <v-chip v-if="importPreview.summary.create_count" color="accent" label size="small" variant="tonal">
+              {{ importPreview.summary.create_count }} create
+            </v-chip>
+            <v-chip v-if="importPreview.summary.update_count" color="primary" label size="small" variant="tonal">
+              {{ importPreview.summary.update_count }} update
+            </v-chip>
+            <v-chip v-if="importPreview.summary.delete_count" color="error" label size="small" variant="tonal">
+              {{ importPreview.summary.delete_count }} delete
+            </v-chip>
+            <v-chip v-if="importPreview.summary.skip_count" color="secondary" label size="small" variant="tonal">
+              {{ importPreview.summary.skip_count }} skip
+            </v-chip>
+            <v-chip v-if="importPreview.summary.error_count" color="warning" label size="small" variant="tonal">
+              {{ importPreview.summary.error_count }} error
+            </v-chip>
+          </div>
+
+          <div class="import-operation-list d-flex flex-column ga-2">
+            <v-sheet
+              v-for="operation in importPreview.operations"
+              :key="`${operation.action}:${operation.method}:${operation.path}:${operation.name}`"
+              class="import-operation-row pa-3"
+              rounded="lg"
+            >
+              <div class="d-flex flex-wrap align-center justify-space-between ga-3">
+                <div class="d-flex flex-wrap align-center ga-2">
+                  <v-chip
+                    :color="importOperationColor(operation.action)"
+                    label
+                    size="small"
+                    variant="tonal"
+                  >
+                    {{ importOperationLabel(operation.action) }}
+                  </v-chip>
+                  <v-chip label size="small" variant="outlined">{{ operation.method }}</v-chip>
+                  <span class="font-weight-medium">{{ operation.name }}</span>
+                </div>
+                <code>{{ operation.path }}</code>
+              </div>
+
+              <div v-if="operation.detail" class="text-body-2 text-medium-emphasis mt-2">
+                {{ operation.detail }}
+              </div>
+            </v-sheet>
+          </div>
+        </div>
+      </v-card-text>
+
+      <v-divider />
+
+      <v-card-actions class="justify-end">
+        <v-btn variant="text" @click="importDialog = false">Close</v-btn>
+        <v-btn
+          :loading="isPreviewingImport"
+          prepend-icon="mdi-clipboard-search-outline"
+          variant="text"
+          @click="previewImportRoutes"
+        >
+          Preview import
+        </v-btn>
+        <v-btn
+          color="primary"
+          :disabled="!canApplyImport"
+          :loading="isApplyingImport"
+          prepend-icon="mdi-upload"
+          @click="applyImportedRoutes"
+        >
+          Import routes
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <style scoped>
@@ -441,6 +997,16 @@ const activeTitle = computed(() => {
   flex-direction: column;
   gap: 1rem;
   min-height: 0;
+}
+
+.import-operation-list {
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.import-operation-row {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: color-mix(in srgb, rgb(var(--v-theme-surface)) 94%, rgb(var(--v-theme-background)) 6%);
 }
 
 @media (min-width: 1280px) {

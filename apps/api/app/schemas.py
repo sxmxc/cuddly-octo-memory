@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -57,6 +58,52 @@ class EndpointRead(EndpointBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EndpointImportMode(str, Enum):
+    create_only = "create_only"
+    upsert = "upsert"
+    replace_all = "replace_all"
+
+
+class EndpointBundle(BaseModel):
+    schema_version: int = 1
+    product: str = "Mockingbird"
+    exported_at: datetime
+    endpoints: List[EndpointBase] = Field(default_factory=list)
+
+
+class EndpointImportRequest(BaseModel):
+    bundle: EndpointBundle
+    mode: EndpointImportMode = EndpointImportMode.upsert
+    dry_run: bool = True
+    confirm_replace_all: bool = False
+
+
+class EndpointImportOperation(BaseModel):
+    action: str
+    method: str
+    path: str
+    name: str
+    detail: Optional[str] = None
+
+
+class EndpointImportSummary(BaseModel):
+    endpoint_count: int = 0
+    create_count: int = 0
+    update_count: int = 0
+    delete_count: int = 0
+    skip_count: int = 0
+    error_count: int = 0
+
+
+class EndpointImportResponse(BaseModel):
+    dry_run: bool
+    applied: bool
+    has_errors: bool
+    mode: EndpointImportMode
+    summary: EndpointImportSummary
+    operations: List[EndpointImportOperation] = Field(default_factory=list)
 
 
 class PreviewRequest(BaseModel):

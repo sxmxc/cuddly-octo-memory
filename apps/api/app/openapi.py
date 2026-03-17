@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import FastAPI
@@ -8,7 +7,12 @@ from fastapi import FastAPI
 from app.config import Settings
 from app.crud import list_endpoints
 from app.db import session_scope
-from app.services.schema_contract import sanitize_public_schema
+from app.services.schema_contract import (
+    extract_request_body_schema,
+    extract_request_parameter_schemas,
+    request_path_parameter_names,
+    sanitize_public_schema,
+)
 
 
 BODY_METHODS = {"post", "put", "patch"}
@@ -18,23 +22,60 @@ def _schema_or_empty(schema: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return sanitize_public_schema(schema or {"type": "object", "properties": {}})
 
 
-def _path_parameters(path: str) -> List[Dict[str, Any]]:
+def _parameter_from_schema(
+    *,
+    name: str,
+    location: str,
+    required: bool,
+    schema: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    sanitized_schema = sanitize_public_schema(schema or {"type": "string"})
+    parameter = {
+        "in": location,
+        "name": name,
+        "required": True if location == "path" else required,
+        "schema": sanitized_schema,
+    }
+    description = sanitized_schema.pop("description", None)
+    if description:
+        parameter["description"] = description
+    return parameter
+
+
+def _request_parameters(endpoint: Any) -> List[Dict[str, Any]]:
     parameters: List[Dict[str, Any]] = []
-    seen: set[str] = set()
+    request_parameters = extract_request_parameter_schemas(endpoint.request_schema or {})
 
-    for match in re.finditer(r"\{([^}]+)\}", path):
-        name = match.group(1).strip()
-        if not name or name in seen:
-            continue
-
-        seen.add(name)
+    path_properties = request_parameters["path"].get("properties", {}) or {}
+    for name in request_path_parameter_names(endpoint.path or ""):
         parameters.append(
-            {
-                "in": "path",
-                "name": name,
-                "required": True,
-                "schema": {"type": "string"},
-            }
+            _parameter_from_schema(
+                name=name,
+                location="path",
+                required=True,
+                schema=path_properties.get(name),
+            )
+        )
+
+    query_schema = request_parameters["query"]
+    query_properties = query_schema.get("properties", {}) or {}
+    query_required = set(query_schema.get("required", []) or [])
+    query_order = list(query_schema.get("x-builder", {}).get("order", []) or [])
+
+    for name in query_properties:
+        if name not in query_order:
+            query_order.append(name)
+
+    for name in query_order:
+        if name not in query_properties:
+            continue
+        parameters.append(
+            _parameter_from_schema(
+                name=name,
+                location="query",
+                required=name in query_required,
+                schema=query_properties.get(name),
+            )
         )
 
     return parameters
@@ -55,16 +96,17 @@ def _build_operation(endpoint: Any) -> Dict[str, Any]:
         },
     }
 
-    path_parameters = _path_parameters(endpoint.path or "")
-    if path_parameters:
-        operation["parameters"] = path_parameters
+    parameters = _request_parameters(endpoint)
+    if parameters:
+        operation["parameters"] = parameters
 
-    if endpoint.method.lower() in BODY_METHODS and endpoint.request_schema:
+    request_body_schema = extract_request_body_schema(endpoint.request_schema)
+    if endpoint.method.lower() in BODY_METHODS and request_body_schema:
         operation["requestBody"] = {
             "required": True,
             "content": {
                 "application/json": {
-                    "schema": _schema_or_empty(endpoint.request_schema),
+                    "schema": _schema_or_empty(request_body_schema),
                 }
             },
         }

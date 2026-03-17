@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlmodel import Session, select
@@ -23,6 +25,12 @@ from app.schemas import (
     AdminUserUpdate,
     ChangePasswordRequest,
     EndpointCreate,
+    EndpointBundle,
+    EndpointImportMode,
+    EndpointImportOperation,
+    EndpointImportRequest,
+    EndpointImportResponse,
+    EndpointImportSummary,
     EndpointRead,
     EndpointUpdate,
     PreviewRequest,
@@ -51,15 +59,25 @@ from app.services.admin_endpoint_policy import (
     validate_endpoint_path,
 )
 from app.services.mock_generation import preview_from_schema
-from app.services.schema_contract import normalize_schema_for_builder
+from app.services.schema_contract import normalize_request_schema_contract, normalize_schema_for_builder
+from app.time_utils import utc_now
 
 
 router = APIRouter()
+ENDPOINT_BUNDLE_PRODUCT = "Mockingbird"
+ENDPOINT_BUNDLE_SCHEMA_VERSION = 1
 SLUG_SEPARATOR_PATTERN = re.compile(r"[^a-z0-9]+")
 
 
-def _normalize_request_schema(schema: dict | None) -> dict:
-    return normalize_schema_for_builder(schema or {}, property_name="root", include_mock=False)
+@dataclass
+class _EndpointImportPlanAction:
+    action: str
+    endpoint: EndpointDefinition | None = None
+    payload: dict[str, Any] | None = None
+
+
+def _normalize_request_schema(schema: dict | None, *, path: str | None = None) -> dict:
+    return normalize_request_schema_contract(schema or {}, path=path)
 
 
 def _normalize_response_schema(schema: dict | None) -> dict:
@@ -76,8 +94,14 @@ def _raise_user_input_error(error: ValueError) -> None:
     raise HTTPException(status_code=status_code, detail=detail)
 
 
-def _normalize_endpoint_fields(updates: dict) -> dict:
+def _normalize_endpoint_fields(
+    updates: dict,
+    *,
+    current_path: str | None = None,
+    current_request_schema: dict | None = None,
+) -> dict:
     normalized_updates = dict(updates)
+    normalized_path = current_path
 
     if "method" in normalized_updates and normalized_updates["method"] is not None:
         normalized_updates["method"] = normalize_endpoint_method(str(normalized_updates["method"]))
@@ -88,7 +112,12 @@ def _normalize_endpoint_fields(updates: dict) -> dict:
         normalized_updates["path"] = normalized_path
 
     if "request_schema" in normalized_updates:
-        normalized_updates["request_schema"] = _normalize_request_schema(normalized_updates["request_schema"])
+        normalized_updates["request_schema"] = _normalize_request_schema(
+            normalized_updates["request_schema"],
+            path=normalized_path,
+        )
+    elif normalized_path is not None and current_request_schema is not None:
+        normalized_updates["request_schema"] = _normalize_request_schema(current_request_schema, path=normalized_path)
 
     if "response_schema" in normalized_updates:
         normalized_updates["response_schema"] = _normalize_response_schema(normalized_updates["response_schema"])
@@ -121,6 +150,302 @@ def _build_unique_slug(
 
         candidate = f"{base_slug}-{suffix}"
         suffix += 1
+
+
+def _build_unique_slug_for_import(
+    *,
+    name: str,
+    requested_slug: str | None,
+    used_slugs: set[str],
+    exclude_slug: str | None = None,
+) -> str:
+    base_slug = _slugify_value(requested_slug or name)
+    candidate = base_slug
+    suffix = 2
+
+    if exclude_slug:
+        used_slugs.discard(exclude_slug)
+
+    while candidate in used_slugs:
+        candidate = f"{base_slug}-{suffix}"
+        suffix += 1
+
+    used_slugs.add(candidate)
+    return candidate
+
+
+def _endpoint_import_key(method: str, path: str) -> tuple[str, str]:
+    return method.upper(), path
+
+
+def _endpoint_import_operation(
+    action: str,
+    *,
+    name: str,
+    method: str,
+    path: str,
+    detail: str | None = None,
+) -> EndpointImportOperation:
+    return EndpointImportOperation(
+        action=action,
+        name=name,
+        method=method.upper(),
+        path=path,
+        detail=detail,
+    )
+
+
+def _list_all_endpoints(session: Session, *, batch_size: int = 500) -> list[EndpointDefinition]:
+    endpoints: list[EndpointDefinition] = []
+    offset = 0
+
+    while True:
+        batch = list_endpoints(session, limit=batch_size, offset=offset)
+        if not batch:
+            return endpoints
+
+        endpoints.extend(batch)
+        if len(batch) < batch_size:
+            return endpoints
+
+        offset += len(batch)
+
+
+def _serialize_endpoint_bundle(endpoints: list[EndpointDefinition]) -> EndpointBundle:
+    sorted_endpoints = sorted(
+        endpoints,
+        key=lambda endpoint: (
+            endpoint.path.lower(),
+            endpoint.method.lower(),
+            endpoint.name.lower(),
+        ),
+    )
+    return EndpointBundle(
+        schema_version=ENDPOINT_BUNDLE_SCHEMA_VERSION,
+        product=ENDPOINT_BUNDLE_PRODUCT,
+        exported_at=utc_now(),
+        endpoints=[
+            EndpointCreate(
+                name=endpoint.name,
+                slug=endpoint.slug,
+                method=endpoint.method,
+                path=endpoint.path,
+                category=endpoint.category,
+                tags=endpoint.tags or [],
+                summary=endpoint.summary,
+                description=endpoint.description,
+                enabled=endpoint.enabled,
+                auth_mode=endpoint.auth_mode.value if hasattr(endpoint.auth_mode, "value") else str(endpoint.auth_mode),
+                request_schema=endpoint.request_schema or {},
+                response_schema=endpoint.response_schema or {},
+                success_status_code=endpoint.success_status_code,
+                error_rate=endpoint.error_rate,
+                latency_min_ms=endpoint.latency_min_ms,
+                latency_max_ms=endpoint.latency_max_ms,
+                seed_key=endpoint.seed_key,
+            )
+            for endpoint in sorted_endpoints
+        ],
+    )
+
+
+def _summarize_endpoint_import(
+    *,
+    endpoint_count: int,
+    operations: list[EndpointImportOperation],
+) -> EndpointImportSummary:
+    return EndpointImportSummary(
+        endpoint_count=endpoint_count,
+        create_count=sum(1 for operation in operations if operation.action == "create"),
+        update_count=sum(1 for operation in operations if operation.action == "update"),
+        delete_count=sum(1 for operation in operations if operation.action == "delete"),
+        skip_count=sum(1 for operation in operations if operation.action == "skip"),
+        error_count=sum(1 for operation in operations if operation.action == "error"),
+    )
+
+
+def _plan_endpoint_import(
+    session: Session,
+    payload: EndpointImportRequest,
+) -> tuple[list[_EndpointImportPlanAction], list[EndpointImportOperation], bool]:
+    operations: list[EndpointImportOperation] = []
+    actions: list[_EndpointImportPlanAction] = []
+    has_errors = False
+
+    if payload.bundle.schema_version != ENDPOINT_BUNDLE_SCHEMA_VERSION:
+        operations.append(
+            _endpoint_import_operation(
+                "error",
+                name="Bundle metadata",
+                method="N/A",
+                path="/",
+                detail=(
+                    f"Bundle schema_version {payload.bundle.schema_version} is not supported. "
+                    f"Expected {ENDPOINT_BUNDLE_SCHEMA_VERSION}."
+                ),
+            )
+        )
+        return actions, operations, True
+
+    existing_endpoints = _list_all_endpoints(session)
+    existing_by_key = {
+        _endpoint_import_key(endpoint.method, endpoint.path): endpoint
+        for endpoint in existing_endpoints
+    }
+    imported_keys: set[tuple[str, str]] = set()
+
+    for bundled_endpoint in payload.bundle.endpoints:
+        raw_payload = bundled_endpoint.model_dump()
+
+        try:
+            normalized_payload = _normalize_endpoint_fields(
+                raw_payload,
+                current_path=bundled_endpoint.path,
+                current_request_schema=bundled_endpoint.request_schema,
+            )
+        except ValueError as error:
+            operations.append(
+                _endpoint_import_operation(
+                    "error",
+                    name=bundled_endpoint.name,
+                    method=bundled_endpoint.method,
+                    path=bundled_endpoint.path,
+                    detail=str(error),
+                )
+            )
+            has_errors = True
+            continue
+
+        endpoint_key = _endpoint_import_key(
+            str(normalized_payload.get("method") or bundled_endpoint.method),
+            str(normalized_payload.get("path") or bundled_endpoint.path),
+        )
+        if endpoint_key in imported_keys:
+            operations.append(
+                _endpoint_import_operation(
+                    "error",
+                    name=str(normalized_payload.get("name") or bundled_endpoint.name),
+                    method=endpoint_key[0],
+                    path=endpoint_key[1],
+                    detail="The import bundle contains the same method/path combination more than once.",
+                )
+            )
+            has_errors = True
+            continue
+
+        imported_keys.add(endpoint_key)
+        existing_endpoint = existing_by_key.get(endpoint_key)
+
+        if existing_endpoint and payload.mode == EndpointImportMode.create_only:
+            operations.append(
+                _endpoint_import_operation(
+                    "skip",
+                    name=existing_endpoint.name,
+                    method=existing_endpoint.method,
+                    path=existing_endpoint.path,
+                    detail="Route already exists in this catalog.",
+                )
+            )
+            continue
+
+        if existing_endpoint:
+            actions.append(_EndpointImportPlanAction("update", endpoint=existing_endpoint, payload=normalized_payload))
+            operations.append(
+                _endpoint_import_operation(
+                    "update",
+                    name=str(normalized_payload.get("name") or existing_endpoint.name),
+                    method=endpoint_key[0],
+                    path=endpoint_key[1],
+                )
+            )
+            continue
+
+        actions.append(_EndpointImportPlanAction("create", payload=normalized_payload))
+        operations.append(
+            _endpoint_import_operation(
+                "create",
+                name=str(normalized_payload.get("name") or bundled_endpoint.name),
+                method=endpoint_key[0],
+                path=endpoint_key[1],
+            )
+        )
+
+    if payload.mode == EndpointImportMode.replace_all:
+        if not payload.dry_run and not payload.confirm_replace_all:
+            operations.append(
+                _endpoint_import_operation(
+                    "error",
+                    name="Replace all confirmation",
+                    method="N/A",
+                    path="/",
+                    detail="Replace-all imports require explicit confirmation before routes are deleted.",
+                )
+            )
+            has_errors = True
+
+        for endpoint in existing_endpoints:
+            endpoint_key = _endpoint_import_key(endpoint.method, endpoint.path)
+            if endpoint_key in imported_keys:
+                continue
+
+            actions.append(_EndpointImportPlanAction("delete", endpoint=endpoint))
+            operations.append(
+                _endpoint_import_operation(
+                    "delete",
+                    name=endpoint.name,
+                    method=endpoint.method,
+                    path=endpoint.path,
+                    detail="Route is not present in the import bundle.",
+                )
+            )
+
+    return actions, operations, has_errors
+
+
+def _apply_endpoint_import_plan(session: Session, actions: list[_EndpointImportPlanAction]) -> None:
+    all_endpoints = _list_all_endpoints(session)
+    used_slugs = {endpoint.slug for endpoint in all_endpoints if endpoint.slug}
+
+    for action in actions:
+        if action.action == "delete" and action.endpoint and action.endpoint.slug:
+            used_slugs.discard(action.endpoint.slug)
+
+    for action in actions:
+        if action.action == "delete":
+            continue
+
+        if not action.payload:
+            continue
+
+        payload = dict(action.payload)
+        if action.action == "create":
+            payload["slug"] = _build_unique_slug_for_import(
+                name=str(payload.get("name") or "endpoint"),
+                requested_slug=payload.get("slug"),
+                used_slugs=used_slugs,
+            )
+            session.add(EndpointDefinition(**payload))
+            continue
+
+        if action.endpoint is None:
+            continue
+
+        payload["slug"] = _build_unique_slug_for_import(
+            name=str(payload.get("name") or action.endpoint.name),
+            requested_slug=payload.get("slug"),
+            used_slugs=used_slugs,
+            exclude_slug=action.endpoint.slug,
+        )
+        for key, value in payload.items():
+            setattr(action.endpoint, key, value)
+        action.endpoint.updated_at = utc_now()
+        session.add(action.endpoint)
+
+    for action in actions:
+        if action.action == "delete" and action.endpoint is not None:
+            session.delete(action.endpoint)
+
+    session.commit()
 
 
 @router.post("/auth/login", response_model=AdminLoginResponse)
@@ -288,6 +613,40 @@ def list_all_endpoints(
     return list_endpoints(session)
 
 
+@router.get("/endpoints/export", response_model=EndpointBundle)
+def export_all_endpoints(
+    session: Session = Depends(get_session),
+    _: AdminContext = Depends(require_admin_access),
+) -> EndpointBundle:
+    return _serialize_endpoint_bundle(_list_all_endpoints(session))
+
+
+@router.post("/endpoints/import", response_model=EndpointImportResponse)
+def import_endpoints_bundle(
+    payload: EndpointImportRequest,
+    session: Session = Depends(get_session),
+    _: AdminContext = Depends(require_admin_access),
+) -> EndpointImportResponse:
+    actions, operations, has_errors = _plan_endpoint_import(session, payload)
+    applied = False
+
+    if not payload.dry_run and not has_errors:
+        _apply_endpoint_import_plan(session, actions)
+        applied = True
+
+    return EndpointImportResponse(
+        dry_run=payload.dry_run,
+        applied=applied,
+        has_errors=has_errors,
+        mode=payload.mode,
+        summary=_summarize_endpoint_import(
+            endpoint_count=len(payload.bundle.endpoints),
+            operations=operations,
+        ),
+        operations=operations,
+    )
+
+
 @router.get("/endpoints/{endpoint_id}", response_model=EndpointRead)
 def read_endpoint(
     endpoint_id: int,
@@ -306,7 +665,11 @@ def create_new_endpoint(
     session: Session = Depends(get_session),
     _: AdminContext = Depends(require_admin_access),
 ) -> EndpointRead:
-    normalized_fields = _normalize_endpoint_fields(endpoint_in.model_dump())
+    normalized_fields = _normalize_endpoint_fields(
+        endpoint_in.model_dump(),
+        current_path=endpoint_in.path,
+        current_request_schema=endpoint_in.request_schema,
+    )
     normalized_fields["slug"] = _build_unique_slug(
         session,
         name=str(normalized_fields.get("name") or endpoint_in.name),
@@ -327,7 +690,11 @@ def update_existing_endpoint(
     if not endpoint:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Endpoint not found")
 
-    updates = _normalize_endpoint_fields(endpoint_in.model_dump(exclude_unset=True))
+    updates = _normalize_endpoint_fields(
+        endpoint_in.model_dump(exclude_unset=True),
+        current_path=endpoint.path,
+        current_request_schema=endpoint.request_schema,
+    )
     if "name" in updates or "slug" in updates:
         updates["slug"] = _build_unique_slug(
             session,

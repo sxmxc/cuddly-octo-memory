@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "./types/endpoints";
+import type { RequestParameterDefinition } from "./utils/requestSchema";
 
 export type BuilderNodeType = "object" | "array" | "string" | "integer" | "number" | "boolean" | "enum";
 export type BuilderScope = "request" | "response";
@@ -29,6 +30,10 @@ export interface SchemaBuilderNode {
 
 type MutableNode = SchemaBuilderNode;
 export type GeneratorOption = { label: string; types: BuilderNodeType[]; value: string };
+type LinkedPathParameterDefinition = Pick<
+  RequestParameterDefinition,
+  "enumValues" | "format" | "hasExplicitSchema" | "maxLength" | "maximum" | "minLength" | "minimum" | "name" | "type"
+>;
 
 const ROOT_ID = "builder-root";
 const DEFAULT_TEXT_LENGTH = 64;
@@ -388,6 +393,35 @@ function cloneNode(node: SchemaBuilderNode): SchemaBuilderNode {
   };
 }
 
+function normalizeLinkedPathParameter(
+  parameter: string | LinkedPathParameterDefinition,
+): LinkedPathParameterDefinition {
+  if (typeof parameter === "string") {
+    return {
+      enumValues: [],
+      format: "",
+      maxLength: null,
+      maximum: null,
+      minLength: null,
+      minimum: null,
+      name: parameter.trim(),
+      type: "string",
+    };
+  }
+
+  return {
+    enumValues: parameter.enumValues ?? [],
+    format: parameter.format ?? "",
+    hasExplicitSchema: parameter.hasExplicitSchema ?? true,
+    maxLength: parameter.maxLength ?? null,
+    maximum: parameter.maximum ?? null,
+    minLength: parameter.minLength ?? null,
+    minimum: parameter.minimum ?? null,
+    name: parameter.name.trim(),
+    type: parameter.type,
+  };
+}
+
 export function cloneTree(tree: SchemaBuilderNode): SchemaBuilderNode {
   return cloneNode(tree);
 }
@@ -618,10 +652,12 @@ export function applyValueType(
 export function applyPathParameter(
   tree: SchemaBuilderNode,
   nodeId: string,
-  parameter: string,
+  parameter: string | LinkedPathParameterDefinition,
   scope: BuilderScope,
 ): SchemaBuilderNode {
-  const trimmedParameter = parameter.trim();
+  const hasLinkedParameterShape = typeof parameter !== "string" && parameter.hasExplicitSchema !== false;
+  const linkedParameter = normalizeLinkedPathParameter(parameter);
+  const trimmedParameter = linkedParameter.name;
   if (scope !== "response" || !trimmedParameter) {
     return tree;
   }
@@ -631,9 +667,77 @@ export function applyPathParameter(
       return node;
     }
 
+    const nextType: BuilderNodeType = hasLinkedParameterShape
+      ? linkedParameter.type === "enum" ? "enum" : linkedParameter.type
+      : node.type;
+    const nextNode =
+      node.type === nextType
+        ? {
+            ...node,
+            enumValues: [...node.enumValues],
+            fixedValue: cloneJsonValue(node.fixedValue),
+            children: [],
+            item: null,
+          }
+        : createNode(nextType, scope, {
+            id: node.id,
+            name: node.name,
+            required: node.required,
+            description: node.description,
+            mode: "generate",
+          });
+
+    const defaultStringMaxLength = recommendedMaxLengthForValueType(nextNode.generator);
+    const shouldAdoptStringMaxLength =
+      node.type !== "string"
+      || nextNode.maxLength == null
+      || nextNode.maxLength === defaultStringMaxLength;
+
     return {
-      ...node,
+      ...nextNode,
       mode: "generate",
+      format:
+        nextType === "string"
+          ? hasLinkedParameterShape
+            ? linkedParameter.format.trim()
+            : nextNode.format
+          : "",
+      minLength:
+        nextType === "string"
+          ? hasLinkedParameterShape
+            ? node.type === "string" && typeof node.minLength === "number"
+              ? node.minLength
+              : linkedParameter.minLength
+            : nextNode.minLength
+          : null,
+      maxLength:
+        nextType === "string"
+          ? hasLinkedParameterShape
+            ? typeof linkedParameter.maxLength === "number" && shouldAdoptStringMaxLength
+              ? linkedParameter.maxLength
+              : nextNode.maxLength
+            : nextNode.maxLength
+          : null,
+      minimum:
+        nextType === "integer" || nextType === "number"
+          ? hasLinkedParameterShape
+            ? node.type === nextType && typeof node.minimum === "number"
+              ? node.minimum
+              : linkedParameter.minimum
+            : nextNode.minimum
+          : null,
+      maximum:
+        nextType === "integer" || nextType === "number"
+          ? hasLinkedParameterShape
+            ? node.type === nextType && typeof node.maximum === "number"
+              ? node.maximum
+              : linkedParameter.maximum
+            : nextNode.maximum
+          : null,
+      enumValues:
+        nextType === "enum" && hasLinkedParameterShape && linkedParameter.enumValues.length > 0
+          ? linkedParameter.enumValues.map((value) => value.trim()).filter(Boolean)
+          : nextNode.enumValues,
       parameterSource: trimmedParameter,
     };
   });

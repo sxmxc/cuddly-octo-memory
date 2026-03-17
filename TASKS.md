@@ -3,8 +3,6 @@
 This file tracks the work needed to bootstrap and evolve the project.
 
 ## Now
-- [ ] Add background refresh or smarter cache invalidation for the admin catalog
-- [ ] Expand the request builder beyond JSON bodies to path/query parameter modeling
 - [ ] Reduce or eliminate Vuetify/jsdom CSS parse noise during frontend tests
 
 ## Next
@@ -89,3 +87,8 @@ This file tracks the work needed to bootstrap and evolve the project.
 - [x] Add a real local production-like Compose mode so a checked-out repo can swap from dev targets to runtime targets
 - [x] Preserve scalar response field types and constraints when linking route-value path parameters in the schema studio
 - [x] Stabilize schema-studio frontend tests so route-value pills do not collide with schema-row selectors in CI
+- [x] Add background refresh and stale-catalog invalidation for the admin catalog without overwriting dirty route drafts
+- [x] Expand the request builder beyond JSON bodies to path/query parameter modeling
+- [x] Sync response-side route-value pills with request path-parameter definitions and hide duplicate linked-field length controls
+- [x] Add full endpoint catalog export/import for backup and environment sync
+- [x] Fix large-catalog import planning and preserve zero-valued request-parameter numeric constraints

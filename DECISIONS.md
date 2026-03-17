@@ -177,5 +177,20 @@
 - **Swap workflow**: Keep the same service names and named Postgres volume between dev and local runtime mode so contributors can swap from `make up` to `make up-prod-local` without losing local endpoint data.
 - **Make ergonomics**: Expose the runtime smoke path through dedicated make targets (`up-prod-local`, `down-prod-local`, `build-prod-local`, `logs-prod-local`) so testing the built stack stays as easy as the normal dev workflow.
 
+## 2026-03-16: Safe admin catalog background refresh
+- **Refresh cadence**: Refresh the admin route catalog every 30 seconds while the page is visible, and also revalidate on focus/online once the last successful sync is stale, so the mounted workspace heals from out-of-band changes without requiring constant manual refreshes.
+- **Draft safety**: Preserve the currently selected route record during catalog refresh whenever its settings form has unsaved edits, because blindly replacing the selected record would reset the mounted draft and lose in-progress work.
+- **Failure handling**: Keep the last successful catalog rendered when refresh requests fail, and surface the refresh problem as an inline error banner instead of blanking the rail or treating a transient fetch failure like an empty catalog.
+
+## 2026-03-17: Request-schema parameter contract
+- **Contract shape**: Keep the request JSON body schema at the root of `request_schema`, and store request-parameter metadata under `request_schema["x-request"]` so older body-only routes remain valid while new path/query editors have somewhere structured to persist their data.
+- **Path ownership**: Treat saved route placeholders as the source of truth for path-parameter names, automatically resyncing the stored `x-request.path` schema whenever the route path changes so parameter names cannot drift away from the live route template.
+- **Publishing behavior**: Generate OpenAPI `parameters` from `x-request.path` and `x-request.query`, keep `requestBody` sourced only from the root body schema, and strip `x-request` from public request-schema/reference output so public consumers see a clean contract instead of builder metadata.
+
+## 2026-03-17: Native endpoint catalog import/export
+- **Backup format**: Use a Mockingbird-native JSON bundle with `schema_version`, `product`, `exported_at`, and serialized endpoint definitions instead of relying on raw DB dumps or OpenAPI import/export, so backups preserve the full editable route contract.
+- **Identity and slugs**: Match existing routes by normalized `method + path` in v1; keep `slug` internal, include it in the bundle for bookkeeping, and regenerate/de-duplicate it on import rather than exposing it as the user-facing sync key.
+- **Safety rails**: Support `create_only`, `upsert`, and `replace_all` import modes, always offer a dry-run preview, and require explicit confirmation before `replace_all` can delete routes missing from the bundle.
+
 
 *> Future decisions should append a dated entry with context and rationale.*

@@ -4,7 +4,13 @@ import { useRoute, useRouter } from "vue-router";
 import { AdminApiError, getEndpoint, previewResponse } from "../api/admin";
 import { useAuth } from "../composables/useAuth";
 import type { Endpoint } from "../types/endpoints";
-import { buildDefaultPathParameters, extractPathParameters, resolvePathParameters } from "../utils/pathParameters";
+import {
+  buildDefaultParameterValue,
+  extractRequestParameterDefinitions,
+  syncPathParameterDefinitions,
+  type RequestParameterDefinition,
+} from "../utils/requestSchema";
+import { buildDefaultPathParameters, resolvePathParameters } from "../utils/pathParameters";
 
 const route = useRoute();
 const router = useRouter();
@@ -12,6 +18,7 @@ const auth = useAuth();
 
 const endpoint = ref<Endpoint | null>(null);
 const pathParameters = ref<Record<string, string>>({});
+const queryParameters = ref<Record<string, string>>({});
 const requestBody = ref("{}");
 const samplePreview = ref<string | null>(null);
 const previewResult = ref<{
@@ -29,6 +36,24 @@ const endpointId = computed(() => {
   const rawId = route.params.endpointId;
   return typeof rawId === "string" ? Number(rawId) : null;
 });
+const pathParameterDefinitions = computed<RequestParameterDefinition[]>(() =>
+  endpoint.value
+    ? syncPathParameterDefinitions(
+        endpoint.value.path,
+        extractRequestParameterDefinitions(endpoint.value.request_schema ?? {}, "path"),
+      )
+    : [],
+);
+const queryParameterDefinitions = computed<RequestParameterDefinition[]>(() =>
+  endpoint.value ? extractRequestParameterDefinitions(endpoint.value.request_schema ?? {}, "query") : [],
+);
+
+function buildDefaultQueryParameterValues(parameters: RequestParameterDefinition[]): Record<string, string> {
+  return parameters.reduce<Record<string, string>>((accumulator, parameter) => {
+    accumulator[parameter.name] = "";
+    return accumulator;
+  }, {});
+}
 
 watch(
   endpointId,
@@ -61,7 +86,11 @@ async function loadEndpoint(): Promise<void> {
   try {
     const loadedEndpoint = await getEndpoint(endpointId.value, auth.session.value);
     endpoint.value = loadedEndpoint;
-    pathParameters.value = buildDefaultPathParameters(loadedEndpoint.path);
+    pathParameters.value = pathParameterDefinitions.value.reduce<Record<string, string>>((accumulator, parameter) => {
+      accumulator[parameter.name] = buildDefaultParameterValue(parameter);
+      return accumulator;
+    }, buildDefaultPathParameters(loadedEndpoint.path));
+    queryParameters.value = buildDefaultQueryParameterValues(queryParameterDefinitions.value);
     requestBody.value = "{}";
   } catch (error) {
     if (error instanceof AdminApiError && error.status === 401) {
@@ -105,6 +134,9 @@ async function runPreview(): Promise<void> {
 
   try {
     let body: string | undefined;
+    const queryString = new URLSearchParams(
+      Object.entries(queryParameters.value).filter(([, value]) => String(value ?? "").trim()),
+    ).toString();
 
     if (!["GET", "DELETE"].includes(endpoint.value.method) && requestBody.value.trim()) {
       try {
@@ -117,7 +149,8 @@ async function runPreview(): Promise<void> {
       }
     }
 
-    const response = await fetch(resolvePathParameters(endpoint.value.path, pathParameters.value), {
+    const requestPath = resolvePathParameters(endpoint.value.path, pathParameters.value);
+    const response = await fetch(queryString ? `${requestPath}?${queryString}` : requestPath, {
       method: endpoint.value.method,
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body,
@@ -222,15 +255,26 @@ async function runPreview(): Promise<void> {
           <v-card class="workspace-card fill-height">
             <v-card-item>
               <v-card-title>Request</v-card-title>
-              <v-card-subtitle>Set path values and send a JSON body when this route uses one.</v-card-subtitle>
+              <v-card-subtitle>Set path/query values and send a JSON body when this route uses one.</v-card-subtitle>
             </v-card-item>
             <v-divider />
             <v-card-text class="d-flex flex-column ga-4">
               <v-text-field
-                v-for="key in extractPathParameters(endpoint.path)"
-                :key="key"
-                v-model="pathParameters[key]"
-                :label="`Path parameter: ${key}`"
+                v-for="parameter in pathParameterDefinitions"
+                :key="parameter.name"
+                v-model="pathParameters[parameter.name]"
+                :hint="parameter.description || undefined"
+                :label="`Path parameter: ${parameter.name}`"
+                persistent-hint
+              />
+
+              <v-text-field
+                v-for="parameter in queryParameterDefinitions"
+                :key="parameter.name"
+                v-model="queryParameters[parameter.name]"
+                :hint="parameter.description || undefined"
+                :label="`Query parameter: ${parameter.name}`"
+                persistent-hint
               />
 
               <v-textarea

@@ -24,7 +24,7 @@ def get_endpoint_by_path(session: Session, path: str, method: str) -> Optional[E
 
 
 def list_endpoints(session: Session, limit: int = 100, offset: int = 0) -> List[EndpointDefinition]:
-    statement = select(EndpointDefinition).offset(offset).limit(limit)
+    statement = select(EndpointDefinition).order_by(EndpointDefinition.id).offset(offset).limit(limit)
     return list(session.execute(statement).scalars())
 
 

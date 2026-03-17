@@ -157,14 +157,18 @@ watch(
       </div>
 
       <div class="catalog-scroll-region">
-        <v-alert v-if="error" border="start" color="error" variant="tonal">
+        <v-alert v-if="error" border="start" class="mb-4" color="error" variant="tonal">
           {{ error }}
         </v-alert>
 
         <v-skeleton-loader
-          v-else-if="loading && endpoints.length === 0"
+          v-if="loading && endpoints.length === 0"
           type="list-item-two-line, list-item-two-line, list-item-two-line, list-item-two-line"
         />
+
+        <v-alert v-else-if="!filteredEndpoints.length && endpoints.length === 0 && !error" border="start" color="info" variant="tonal">
+          No routes are available yet.
+        </v-alert>
 
         <v-alert v-else-if="!filteredEndpoints.length" border="start" color="info" variant="tonal">
           No routes match the current filters.
