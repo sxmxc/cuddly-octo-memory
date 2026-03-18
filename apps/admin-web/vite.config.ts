@@ -50,7 +50,9 @@ export default defineConfig({
     },
   },
   test: {
-    css: true,
+    // Vuetify ships modern CSS that jsdom does not fully parse; stubbing CSS
+    // imports keeps component tests focused on behavior instead of stylesheet noise.
+    css: false,
     environment: "jsdom",
     globals: true,
     server: {

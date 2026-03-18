@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import random
 import re
-import time
 from typing import Any
 from urllib.parse import unquote
 
@@ -35,17 +35,35 @@ def _match_path_parameters(request_path: str, pattern: str) -> dict[str, str] | 
     }
 
 
-def _pick_response(endpoint: Any, path_parameters: dict[str, str]) -> Any:
+def _pick_response(
+    endpoint: Any,
+    path_parameters: dict[str, str],
+    query_parameters: dict[str, str],
+    request_body: Any,
+) -> Any:
     return preview_from_schema(
         endpoint.response_schema,
         path_parameters=path_parameters,
+        query_parameters=query_parameters,
+        request_body=request_body,
         seed_key=endpoint.seed_key,
         identity=f"endpoint:{endpoint.id}:{endpoint.method}:{endpoint.path}",
     )
 
 
+async def _parse_json_request_body(request: Request) -> Any:
+    body = await request.body()
+    if not body:
+        return None
+
+    try:
+        return json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+
 @router.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
-def catchall(full_path: str, request: Request, session: Session = Depends(get_session)) -> Response:
+async def catchall(full_path: str, request: Request, session: Session = Depends(get_session)) -> Response:
     request_path = request.url.path
     method = request.method.upper()
 
@@ -71,7 +89,7 @@ def catchall(full_path: str, request: Request, session: Session = Depends(get_se
     # Simulate latency
     if match.latency_max_ms > 0:
         wait_ms = random.randint(match.latency_min_ms, match.latency_max_ms)
-        time.sleep(wait_ms / 1000.0)
+        await asyncio.sleep(wait_ms / 1000.0)
 
     # Simulate errors
     if match.error_rate > 0 and random.random() < match.error_rate:
@@ -81,7 +99,9 @@ def catchall(full_path: str, request: Request, session: Session = Depends(get_se
             media_type="application/json",
         )
 
-    body = _pick_response(match, matched_path_parameters)
+    request_body = await _parse_json_request_body(request)
+    query_parameters = {key: value for key, value in request.query_params.items()}
+    body = _pick_response(match, matched_path_parameters, query_parameters, request_body)
     return Response(
         status_code=match.success_status_code,
         content=json.dumps(body, default=str),
